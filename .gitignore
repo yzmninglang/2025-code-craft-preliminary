@@ -6,3 +6,4 @@
 !*.java
 !*.cpp
 !*.md
+demos/cpp/test.cpp

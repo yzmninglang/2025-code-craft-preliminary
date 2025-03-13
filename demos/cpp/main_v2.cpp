@@ -20,7 +20,7 @@ typedef struct Request_ {
 } Request;
 
 typedef struct Object_ {
-    int replica[REP_NUM + 1];  // 副本
+    int replica[REP_NUM + 1];  // 副本（2个）
     int* unit[REP_NUM + 1];
     int size;
     int tag;
