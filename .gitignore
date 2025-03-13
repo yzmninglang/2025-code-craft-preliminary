@@ -1,6 +1,5 @@
 *
 !*/
-# !plot/
 !*.m
 !.gitignore
 !*.py
@@ -9,3 +8,4 @@
 !*.cpp
 !*.md
 demos/cpp/test.cpp
+demos/cpp/TestFile/
