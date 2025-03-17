@@ -18,7 +18,7 @@ typedef struct Request_ {
     int remain_size; // 还剩下多少个块没有读，为0时就是读完了，需要及时done
     int prev_id;  // 该对象的前一个读取请求的req_id
     int* unread_block;  // 该请求中，未被读取的块的索引（1~size）,对应索引位置为0就代表没有读
-    bool is_done;
+    bool is_done;  //请求被完成
     bool is_abort;  // 该请求是否被取消
 } Request;
 
@@ -39,7 +39,7 @@ typedef struct Disk_Head_ {
 
 Request request[MAX_REQUEST_NUM];  // 用一个数组保存所有请求
 Object object[MAX_OBJECT_NUM];  // 对象的id就是用object数组的index表示
-Disk_Head disk_head[MAX_DISK_NUM];  //磁头数组
+Disk_Head disk_head[MAX_DISK_NUM];  //磁头数组：[MAX_DISK_NUM]
 
 int T, M, N, V, G;
 int disk[MAX_DISK_NUM][MAX_DISK_SIZE][2];  //每块硬盘用三维数组表示，[xx][yy][0]代表object_id，[xx][yy][1]代表block_id（不会超过其size）
@@ -194,17 +194,18 @@ void read_action()  // 对象读取事件
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         while (token > 0) {
             int last_status = disk_head[i].last_status; 
-            int current_disk_head = disk_head[i].pos;
+            int current_disk_head = disk_head[i].pos; //当前预估有id块所在的位置
             int current_point_objid = disk[i][current_disk_head][0];  // disk[i][disk_head[i]][0]表示当前硬盘当前磁头对应位置写入的object_id，未写入是0
             int current_point_objblock = disk[i][current_disk_head][1];  // 对象的块的编号
             while (current_point_objid == 0 || request[object[current_point_objid].last_request_point].is_done || request[object[current_point_objid].last_request_point].is_abort) {
                 // 如果当前磁头指向空位置或者是所指向位置所对应的请求已经被删除或者是丢弃（感觉is_abort有可能没有用了）
                 // 假设对同一个对象的请求中，后到的总是不早于先到的done，也就是说如果后到的请求都done，那么先到的肯定也done
+                // current_disk_head(当前磁头)往前走一步
                 current_disk_head = current_disk_head % V + 1;
                 current_point_objid = disk[i][current_disk_head][0];
                 current_point_objblock = disk[i][current_disk_head][1];
             }
-            // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成）
+            // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成，不一定是当前request）
             int current_req_id = object[current_point_objid].last_request_point;
             if (current_disk_head == disk_head[i].pos) {  // 当前磁头没有额外移动可以直接读
                 // 根据last_status计算这一次读要消耗的令牌数，如果剩余令牌>=要消耗的令牌，则读取成功，否则进入下一个时间片
@@ -254,6 +255,7 @@ void read_action()  // 对象读取事件
                 }
             }
             else {
+                // 磁头直接跳转到指定位置的情况
                 int pass_num = (current_disk_head - disk_head[i].pos) % V;  // 计算实际上磁头要pass多少次才能到下一个有效的读位
                 if(pass_num > G - 64 && token == G) {  // 跳，然后这个时间片的这个磁头操作结束
                     printf("j %d\n", current_disk_head);
