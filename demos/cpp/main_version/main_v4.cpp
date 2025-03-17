@@ -61,7 +61,7 @@ inline int max(int a, int b) {
     return (a > b) ? a : b;
 }
 
-void do_object_delete(const int* object_unit, int* disk_unit, int size)
+void do_object_delete(const int* object_unit, int (*disk_unit)[2], int size)
 {
     for (int i = 1; i <= size; i++) {
         disk_unit[object_unit[i]][0] = 0;
@@ -108,7 +108,7 @@ void delete_action()  // 对象删除事件
     fflush(stdout);
 }
 
-void do_object_write(int* object_unit, int* disk_unit, int size, int object_id)
+void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object_id)
 {
     int current_write_point = 0;
     int start_address = tag_block_address[object[object_id].tag];  // 每个TAG分区在各个盘中的首地址（相同）
