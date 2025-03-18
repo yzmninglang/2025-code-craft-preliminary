@@ -11,3 +11,5 @@ demos/cpp/test.cpp
 demos/cpp/TestFile/
 demos/cpp/build/CMakeFiles/3.31.5/CompilerIdCXX/CMakeCXXCompilerId.cpp
 demos/cpp/build/CMakeFiles/3.31.5/CompilerIdC/CMakeCCompilerId.c
+demos/cpp/cmake-build-debug/CMakeFiles/3.30.5/CompilerIdC/CMakeCCompilerId.c
+demos/cpp/cmake-build-debug/CMakeFiles/3.30.5/CompilerIdCXX/CMakeCXXCompilerId.cpp

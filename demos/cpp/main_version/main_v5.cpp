@@ -177,7 +177,7 @@ void read_action()  // 对象读取事件
     int n_read;  // 这一时间片读取对象的个数
     int request_id, object_id;
     scanf("%d", &n_read);
-
+    // 判断本次是否存在读写
     if(n_read==0)
     {
         for (int i = 1; i <= N; i++) {  // 如果n_read = 0，即当前时间片没有请求内容，则所有硬盘的磁头都不动，输出“0”表示没有读操作
@@ -186,9 +186,6 @@ void read_action()  // 对象读取事件
         printf("0\n");  // 若当前时间片读取了前面时间片请求的内容，该如何输出？？？
     }
     else {
-
-        // printf("hello");
-    
     for (int i = 1; i <= n_read; i++) {
         scanf("%d%d", &request_id, &object_id);
         request[request_id].object_id = object_id;
@@ -199,41 +196,25 @@ void read_action()  // 对象读取事件
         request[request_id].is_done = false;
         request[request_id].is_abort = false;
         request[request_id].unread_block = static_cast<int*>(calloc(request[request_id].object_size + 1, sizeof(int)));  //记得在clean里面free
+//        for (int j = 1; j < request[request_id].object_size + 1; ++j) {
+//            request[request_id].unread_block[j]=0;
+//        }
     }
     req_count += n_read;
     int req_completed = 0;  // 这个时间片完成了多少请求
-    // printf("N:%d",N);
-    for (int i = 1; i <=N; i++) {  // 对每个磁头都进行操作
-        // printf("i:%d",i);
+    for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         while (token > 0) {
-            // temp_cout++;
-            // printf("temp:%d",temp_cout);
-            int last_status = disk_head[i].last_status; 
-            int current_disk_head = disk_head[i].pos; //当前预估有id块所在的位置
+            int last_status = disk_head[i].last_status;
+            int current_disk_head = disk_head[i].pos;
             int current_point_objid = disk[i][current_disk_head][0];  // disk[i][disk_head[i]][0]表示当前硬盘当前磁头对应位置写入的object_id，未写入是0
-            int current_point_objblock = disk[i][current_disk_head][1];  // 对象的块的编号
             int not_find =0; //表征是不是没有找到
-            
-            int temp_cout = 0; //用来计算在while中跑了多久，如果超过一轮，则自动退出
-            // printf("disk_head[i].pos:%d\n",disk_head[i].pos);
-            // printf("current_point_objid:%d\n",current_point_objid);
-            // printf("RequestObj%d\n",request[object[current_point_objid].last_request_point].is_done);
-            // printf("request is_abort%d\n",request[object[current_point_objid].last_request_point].is_abort);
-            // if ()
-            // 跳出来的条件：当前当前存储位置有内容，且当前位置一定满足某个request要读的块，且上一次请求被完成，且上一次请求被取消
-
+            int tempcout=0;
+            int current_point_objblock = disk[i][current_disk_head][1];  // 对象的块的编号
             while (current_point_objid == 0 || request[object[current_point_objid].last_request_point].is_done || request[object[current_point_objid].last_request_point].is_abort) {
                 // 如果当前磁头指向空位置或者是所指向位置所对应的请求已经被删除或者是丢弃（感觉is_abort有可能没有用了）
                 // 假设对同一个对象的请求中，后到的总是不早于先到的done，也就是说如果后到的请求都done，那么先到的肯定也done
-                // current_disk_head(当前磁头)往前走一步
-
-                temp_cout++;
-                // printf("temp_cout:%d",temp_cout);
-                // printf("current_disk_head:%d",current_disk_head);
-                //下面这个必须要先+1，再求余数，否则0就不OK
-
-                current_disk_head = (current_disk_head )%V+1; 
+                current_disk_head = current_disk_head % V + 1;
                 current_point_objid = disk[i][current_disk_head][0];
                 current_point_objblock = disk[i][current_disk_head][1];
                 if (current_disk_head == disk_head[i].pos) //如果走了一圈还是没有找到就离开吧
@@ -242,119 +223,132 @@ void read_action()  // 对象读取事件
                     not_find =1;
                     break;
                 }
-                
+//                printf()
+                tempcout++;
             }
-            // 如果找到了，那么执行相应的跳转程序，如果没有找到，就看下一个盘
-            if(not_find==0 )
+            int tmep;
+            if (not_find == 0)
             {
-                // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成，不一定是当前request）
+                /* code */
+            
+                // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成）
                 int current_req_id = object[current_point_objid].last_request_point;
-                // printf("current_req_id:%d",current_req_id);
-                if (current_req_id!=0)
-                {
-                if (current_disk_head == disk_head[i].pos) {  // 当前磁头没有额外移动可以直接读
-                    // 根据last_status计算这一次读要消耗的令牌数，如果剩余令牌>=要消耗的令牌，则读取成功，否则进入下一个时间片
-                    int ceil = max(16, (last_status * 8 + 9) / 10);  // (last_status*8+9)/10就能保证是last_status*0.8还向上取整
-                    if ((last_status == -1 || last_status == 1 || last_status == 0) && token >= 64) {  // 上个动作是跳或者pass，或者是第一个时间片首次"Read"，令牌-64
-                        token -= 64;
-                        last_status = 64;
-                    }
-                    else if (token >= ceil) {
-                        last_status = ceil;
-                        token -= last_status;
-                    }
-                    else {
-                        printf("#\n");
-                        break;
-                    }
-                    // 对应请求中，读过的块置1,remiansize减一
-                    if (request[current_req_id].unread_block[current_point_objblock] == 0) {  // 没读过才能读
-                        printf("r");
-                        request[current_req_id].unread_block[current_point_objblock] = 1;
-                        if(--request[current_req_id].remain_size == 0) {
-                            completed_req_id[++req_completed] = current_req_id;  // 如果请求的对象的每个块都读完了就记录
-                        }
-                        disk_head[i].pos = disk_head[i].pos % V + 1;
-                        disk_head[i].last_status = last_status;
+                if (current_req_id!=0) {
 
-                        while (request[current_req_id].prev_id != 0) {  // 一直回溯到对该对象的第一个请求
-                            // printf("")
-                            current_req_id = request[current_req_id].prev_id;  // 找上一个请求该内容的看看要不要读，要的话就顺便读了
-                            if (request[current_req_id].is_done == true) {
-                                if (request[current_req_id].prev_id != 0) {
-                                    current_req_id = request[current_req_id].prev_id;
-                                }
-                                else {
-                                    // 对该对象的全部请求都满足了
-                                    request[object[current_point_objid].last_request_point].prev_id = 0;
-                                    break;
-                                }
-                            }
-                            else {  // 读取一个block，满足若干请求中的一个block请求
-                                // token = token-
-                                request[current_req_id].unread_block[current_point_objblock] = 1;
-                                if(--request[current_req_id].remain_size == 0) {
-                                    completed_req_id[++req_completed] = current_req_id;  // 如果请求的对象的每个块都读完了就记录
-                                }
+                    if (current_disk_head == disk_head[i].pos) {  // 当前磁头没有额外移动可以直接读
+                        // 根据last_status计算这一次读要消耗的令牌数，如果剩余令牌>=要消耗的令牌，则读取成功，否则进入下一个时间片
+                        int ceil = max(16,(last_status * 8 + 9) / 10);  // (last_status*8+9)/10就能保证是last_status*0.8还向上取整
+                        if (last_status <= 1) {  // 上个动作是跳或者pass，或者是第一个时间片首次"Read"，令牌-64
+                            // last_status == -1 || last_status == 1 || last_status == 0直接改成<=1
+                            if (token >= 64) { last_status = 64; }
+                            else {
+                                printf("#\n");
                                 break;
                             }
+                        } else if (token >= ceil) {
+                            last_status = ceil;
+                        }
+
+                        // 对应请求中，读过的块置1,remiansize减一
+                        if (request[current_req_id].unread_block[current_point_objblock] ==
+                            0) {  // 没读过才读,如果最后来的请求没有读过这个块，合理推测前面的请求也有可能没读过。
+                            // 但是现在的请求读过这个块的话，暂时认为之前的请求也读过了这个块
+                            token -= last_status;  // Read动作消耗令牌
+                            printf("r");
+                            request[current_req_id].unread_block[current_point_objblock] = 1;
+                            if (--request[current_req_id].remain_size == 0) {
+                                completed_req_id[++req_completed] = current_req_id;  // 如果请求的对象的每个块都读完了就记录，然后这个req置为is_done
+                                request[current_req_id].is_done = true;
+                            }
+                            disk_head[i].pos = disk_head[i].pos % V + 1;
+                            disk_head[i].last_status = last_status;
+
+                            // 当前磁头指向的block可以满足若干同一对象请求中的同一个block请求，如果上一个请求存在且未完成才进这个循环
+                            while (request[current_req_id].prev_id != 0 &&
+                                   !request[request[current_req_id].prev_id].is_done) {
+                                current_req_id = request[current_req_id].prev_id;
+                                // 找上一个对该对象的请求看看要不要读，要的话就顺便满足其需求：相应unread_block位置置1
+                                if (request[current_req_id].unread_block[current_point_objblock] == 0) {
+                                    request[current_req_id].unread_block[current_point_objblock] = 1;
+                                    if (--request[current_req_id].remain_size == 0) {
+                                        completed_req_id[++req_completed] = current_req_id;  // 如果请求的对象的每个块都读完了就记录
+                                        request[current_req_id].is_done = true;
+                                    }
+                                }
+                            }
+                        } else {  // 读过了就Pass
+                            printf("p");
+                            --token;
+                            disk_head[i].pos = disk_head[i].pos % V + 1;
+                            disk_head[i].last_status = 1;
+                        }
+                    } else {
+                        int pass_num = (current_disk_head - disk_head[i].pos) % V;  // 计算实际上磁头要pass多少次才能到下一个有效的读位
+                        //分多种情况，1.token==G，跳还是不跳：此时判断G的令牌数能否支撑pass到目标位置且读取，能就不跳，不能就跳
+                        // 2.token!=G，此时判断此时判断G的令牌数能否支撑pass到目标位置，能就pass，不能就结束磁头动作。读的动作让下个while循环去处理
+                        if (token == G) {
+                            if (pass_num + 64 >
+                                token) //pass_num<token但是pass_num+64>token的情况，相当于是可以通过pass到对应位置之后啥也干不了，还不如就直接跳
+                            {
+                                printf("j %d\n", current_disk_head);
+                                disk_head[i].pos = current_disk_head;
+                                disk_head[i].last_status = -1;
+                                break;
+                            } else //pass_num+64<=token的情况，通过pass之后还有余力读
+                            {
+                                token = token - pass_num;
+                                while (pass_num > 0) {
+                                    --pass_num;
+                                    printf("p");
+                                }
+                                disk_head[i].pos = current_disk_head;
+                                disk_head[i].last_status = 1;
+                            }
+                        } else {
+                            if (pass_num + 64 > token) {
+                                printf("#\n");
+                                break;
+                            } else {
+                                token = token - pass_num;
+                                while (pass_num > 0) {
+                                    --pass_num;
+                                    printf("p");
+                                }
+                                disk_head[i].pos = current_disk_head;
+                                disk_head[i].last_status = 1;
+                            }
                         }
                     }
+                } else
+                {
+                    printf("#\n");
+                    // continue;
+                    token =0;
                 }
-                else {
-                    // // 磁头直接跳转到指定位置的情况
-                    // int pass_num;
 
-                    // if (current_disk_head<disk_head[i].pos)  //判断一下是否是小于当前的位置，如果小于当前的位置，则用（目的地址+第i个disk容量）-当前指针位置
-                    // {
-                    //     pass_num = (current_disk_head+V)-disk_head[i].pos;
-                    // }else
-                    // {
-                    //     pass_num = current_disk_head - disk_head[i].pos ;  // 计算实际上磁头要pass多少次才能到下一个有效的读位
-                    // }
-                    // if(pass_num > G - 64 && token == G) {  // 跳，然后这个时间片的这个磁头操作结束
-                    //     printf("j %d\n", current_disk_head);
-                    //     disk_head[i].pos = current_disk_head;
-                    //     disk_head[i].last_status = -1;
-                    //     break;
-                    // }
-                    // else if(pass_num > G - 64 && token != G) {  // 想跳也跳不了，这个时间片的这个磁头操作结束
-                    //     printf("#\n");
-                    //     break;
-                    // }
-                    // else { // 用很多个pass使磁头指向要读的位置，更新令牌数之后继续
-                    //     disk_head[i].last_status = 1;
-                        
-                    // }
-                }
-            }else{
-                printf("#\n");
-                // continue;
-                token =0;
             }
-            }else{
-                // 如果这个盘里面没有存我想要的内容，token直接归0，进入下一个盘
+            else{
                 printf("#\n");
-                // continue;
-                token =0;
+                break;
             }
         }
 
     }
-        if (req_completed>0) {  // 该对象读取完毕
-            printf("%d\n",req_completed);
-            for(int i= 1;i<=req_completed;i++)
-            {
-                printf("%d\n",completed_req_id[i]);
-            }
-
-        } else {
-            printf("0\n");
+    // 上报本次完成读取的req_id，必须要在for循环的外面
+    if (req_completed>0) {  // 该对象读取完毕
+        printf("%d\n",req_completed);
+        for(int i= 1;i<=req_completed;i++)
+        {
+            printf("%d\n",completed_req_id[i]);
         }
     }
+    else{
+        printf("0\n");
+//        break;
+    }
+}
     fflush(stdout);
 }
-
 
 void clean()
 {
@@ -394,7 +388,7 @@ int main()
     }
 
     for (int i = 1; i <= N; i++) {
-        disk_head[i].pos = 0;
+        disk_head[i].pos = 1;
         disk_head[i].last_status = 0;
         // disk_head[i].token = G;
     }
