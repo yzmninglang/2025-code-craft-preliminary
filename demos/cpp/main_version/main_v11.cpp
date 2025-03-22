@@ -29,7 +29,7 @@ typedef struct Request_ {
 typedef struct Request_id_{
     int requestid;  //请求的号
     int ts_create;  //请求创建的时间
-//    int score;
+    double score;
 } Request_Id;
 
 
@@ -62,14 +62,6 @@ int tag_block_address[MAX_TAG_NUM];
 std::deque<Request_Id> no_need_to_abort; //在范围内的数组
 
 
-void timestamp_action()  // 时间片对齐事件
-{
-    int timestamp;
-    scanf("%*s%d", &timestamp);
-    printf("TIMESTAMP %d\n", timestamp);
-
-    fflush(stdout);
-}
 
 void write_to_file(int num1, int num2, int num3,int num4,int num5) {
     // 固定文件名
@@ -92,6 +84,16 @@ void write_to_file(int num1, int num2, int num3,int num4,int num5) {
     file.close();
 }
 
+void timestamp_action()  // 时间片对齐事件
+{
+    
+    int timestamp;
+    scanf("%*s%d", &timestamp);
+    printf("TIMESTAMP %d\n", timestamp);
+    // if(timestamp>=86504){write_to_file(timestamp, 1, 1, 1, 1);}
+
+    fflush(stdout);
+}
 
 inline int max(int a, int b) {
     return (a > b) ? a : b;
@@ -213,8 +215,19 @@ void read_action()  // 对象读取事件
     int n_read;  // 这一时间片读取对象的个数
     int request_id, object_id;
     scanf("%d", &n_read);
-    // 判断本次是否存在读写
 
+    // if (TS % 1800 == 0) {
+    //     int max_tag_num = N / 2;  // 选出前N/2个请求频率最高的TAG分区进行jump，每两个disk负责一个TAG
+    // }
+    // 判断本次是否存在读写
+    // if(n_read==0)
+    // {
+    //     for (int i = 1; i <= N; i++) {  // 如果n_read = 0，即当前时间片没有请求内容，则所有硬盘的磁头都不动，输出“0”表示没有读操作
+    //         printf("#\n");
+    //     }
+    //     printf("0\n");  // 若当前时间片读取了前面时间片请求的内容，该如何输出？？？
+    // }
+    // else {
     for (int i = 1; i <= n_read; i++) {
         scanf("%d%d", &request_id, &object_id);
         request[request_id].object_id = object_id;
@@ -232,21 +245,23 @@ void read_action()  // 对象读取事件
 
     }
     //如果ts_create小于TS-105,则出队
+    // if(TS>=86504){write_to_file(TS, 12, no_need_to_abort.size(), n_read, 12);}
     if(!no_need_to_abort.empty())
     {
-        while(TS-no_need_to_abort.front().ts_create>105)
+        while(TS-no_need_to_abort.front().ts_create>50)
         {
             request[no_need_to_abort.front().requestid].is_abort = true;
             no_need_to_abort.pop_front();
+            if(no_need_to_abort.empty()){break;}
         }
     }
-
+    // if(TS>=86504){write_to_file(TS, 22, no_need_to_abort.size(), n_read, 22);}
     req_count += n_read;
     int req_completed = 0;  // 这个时间片完成了多少请求
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         while (token > 0) {
-            write_to_file(TS,i,token,n_read,1);
+            // if(TS>=86504){write_to_file(TS, i, token, n_read, 1);}
             int last_status = disk_head[i].last_status; //上一次动作，-1：j; 1：p; 其他数字表示上次的token消耗
             int current_disk_head = disk_head[i].pos;
             int current_point_objid = disk[i][current_disk_head][0];  // disk[i][disk_head[i]][0]表示当前硬盘当前磁头对应位置写入的object_id，未写入是0
@@ -271,11 +286,12 @@ void read_action()  // 对象读取事件
             int tmep;
             if (not_find == 0)
             {
+                // if(TS>=86504){write_to_file(TS, i, token, n_read, 2);}
                 /* code */
                 // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成）
                 int current_req_id = object[current_point_objid].last_request_point;
                 if (current_req_id!=0) {
-
+                    // if(TS>=86504){write_to_file(TS, i, token, n_read, 10);}
                     if (current_disk_head == disk_head[i].pos) {  // 当前磁头没有额外移动可以直接读
                         // 根据last_status计算这一次读要消耗的令牌数，如果剩余令牌>=要消耗的令牌，则读取成功，否则进入下一个时间片
                         int ceil = max(16,(last_status * 8 + 9) / 10);  // (last_status*8+9)/10就能保证是last_status*0.8还向上取整
@@ -283,6 +299,7 @@ void read_action()  // 对象读取事件
                             // last_status == -1 || last_status == 1 || last_status == 0直接改成<=1
                             if (token >= 64) { last_status = 64; }
                             else {
+                                // if(TS>=86504){write_to_file(TS, i, token, n_read, 8);}
                                 printf("#\n");
                                 break;
                             }
@@ -290,6 +307,7 @@ void read_action()  // 对象读取事件
                             last_status = ceil;
                         } else
                         {
+                            // if(TS>=86504){write_to_file(TS, i, token, n_read, 9);}
                             printf("#\n");
                             break;
                         }
@@ -313,8 +331,7 @@ void read_action()  // 对象读取事件
                             // 当前磁头指向的block可以满足若干同一对象请求中的同一个block请求，如果上一个请求存在且未完成才进这个循环
                             while (request[current_req_id].prev_id != 0 &&
                                     !request[request[current_req_id].prev_id].is_done) {
-                                    write_to_file(TS,i,token,n_read,2);
-
+                                // if(TS>=86504){write_to_file(TS, i, token, n_read, 3);}
                                 current_req_id = request[current_req_id].prev_id;
                                 // 找上一个对该对象的请求看看要不要读，要的话就顺便满足其需求：相应unread_block位置置1
                                 if (request[current_req_id].unread_block[current_point_objblock] == 0) {
@@ -378,6 +395,7 @@ void read_action()  // 对象读取事件
                     }
                 } else
                 {
+                    // if(TS>=86504){write_to_file(TS, i, token, n_read, 11);}
                     printf("#\n");
                     // continue;
                     break;
@@ -385,18 +403,21 @@ void read_action()  // 对象读取事件
 
             }
             else{
+                // if(TS>=86504){write_to_file(TS, i, token, n_read, 6);}
                 printf("#\n");
                 break;
             }
             // 为了防止刚好用完350个token，r之后不进入循环，导致少打了一个#号，针对11851时隙
             if(token==0)
             {
+                // if(TS>=86504){write_to_file(TS, i, token, n_read, 7);}
                 printf("#\n");
                 break;
             }
+        // if(TS>=86504){write_to_file(TS, i, token, n_read, 4);}
         }
-
     }
+    // if(TS>=86504){write_to_file(TS, req_completed, G, n_read, 5);}
     // 上报本次完成读取的req_id，必须要在for循环的外面
     if (req_completed>0) {  // 该对象读取完毕
         printf("%d\n",req_completed);
@@ -409,7 +430,6 @@ void read_action()  // 对象读取事件
         printf("0\n");
 //        break;
     }
-
     fflush(stdout);
 }
 
@@ -467,8 +487,11 @@ int main()
         TS=t;
         timestamp_action();
         delete_action();
+        // if(TS>=86505){write_to_file(TS, 2, 2, 2, 2);}
         write_action();
+        // if(TS>=86505){write_to_file(TS, 3, 3, 3, 3);}
         read_action();
+        // if(TS>=86505){write_to_file(TS, 5, 5, 5, 5);}
     }
     clean();
 

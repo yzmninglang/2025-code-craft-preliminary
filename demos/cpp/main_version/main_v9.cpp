@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
+#include <vector>
+#include <deque>
 
 #define MAX_DISK_NUM (10 + 1)  // 硬盘最多10个，10+1是为了让你计数方便不从0开始
 #define MAX_DISK_SIZE (16384 + 1)  // 每个硬盘的存储单元数，+1是为了让你计数方便不从0开始 
@@ -24,9 +26,15 @@ typedef struct Request_ {
     bool is_abort;  // 该请求是否被取消
 } Request;
 
+typedef struct Request_id_{
+    int requestid;  //请求的号
+    int ts_create;  //请求创建的时间
+} Request_Id;
+
+
 typedef struct Object_ {
     int replica[REP_NUM + 1];  // 副本
-    int* unit[REP_NUM + 1];
+    int* unit[REP_NUM + 1];   //第几个块
     int size;
     int tag;
     int last_request_point; // 该对象上一次被请求的req_id（如果需要读上上个被请求的req_id就得到request数组读）
@@ -50,6 +58,7 @@ int fre_del[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙
 int fre_write[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有写入操作中对象标签为i的对象大小之和
 int fre_read[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有读取操作中对象标签为i的对象大小之和，同一个对象的多次读取会重复计算
 int tag_block_address[MAX_TAG_NUM];
+std::deque<Request_Id> no_need_to_abort; //在范围内的数组
 
 
 void timestamp_action()  // 时间片对齐事件
@@ -176,6 +185,7 @@ void write_action()  // 对象写入事件
         object[id].size = size;
         object[id].tag = tag_id;
         object[id].is_delete = false;
+        //共REP——NUM个数据
         for (int j = 1; j <= REP_NUM; j++) {
             object[id].replica[j] = (id + j) % N + 1;  // 得到主盘与两个副本盘编号
             object[id].unit[j] = static_cast<int*>(malloc(sizeof(int) * (size + 1)));  // unit中的元素对应相应副本的首地址
@@ -222,10 +232,22 @@ void read_action()  // 对象读取事件
             request[request_id].is_done = false;
             request[request_id].is_abort = false;
             request[request_id].unread_block = static_cast<int*>(calloc(request[request_id].object_size + 1, sizeof(int)));  //记得在clean里面free
-//        for (int j = 1; j < request[request_id].object_size + 1; ++j) {
-//            request[request_id].unread_block[j]=0;
-//        }
+            Request_Id requestinfo;
+            requestinfo.requestid=request_id;
+            requestinfo.ts_create=TS;
+            no_need_to_abort.push_back(requestinfo);
+
         }
+        //如果ts_create小于TS-105,则出队
+        if(!no_need_to_abort.empty())
+        {
+            while(TS-no_need_to_abort.front().ts_create>105)
+            {
+                request[no_need_to_abort.front().requestid].is_abort = true;
+                no_need_to_abort.pop_front();
+            }
+        }
+
         req_count += n_read;
         int req_completed = 0;  // 这个时间片完成了多少请求
         for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作

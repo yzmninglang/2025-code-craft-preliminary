@@ -1,0 +1,1 @@
+python .\run.py .\interactor\windows\interactor.exe .\data\sample_practice1.in .\demos\cpp\main_version\main.exe -d -r

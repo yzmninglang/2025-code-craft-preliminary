@@ -1,10 +1,6 @@
 #include <cstdio>
 #include <cassert>
 #include <cstdlib>
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <deque>
 
 #define MAX_DISK_NUM (10 + 1)  // 硬盘最多10个，10+1是为了让你计数方便不从0开始
 #define MAX_DISK_SIZE (16384 + 1)  // 每个硬盘的存储单元数，+1是为了让你计数方便不从0开始 
@@ -26,13 +22,6 @@ typedef struct Request_ {
     bool is_abort;  // 该请求是否被取消
 } Request;
 
-typedef struct Request_id_{
-    int requestid;  //请求的号
-    int ts_create;  //请求创建的时间
-//    int score;
-} Request_Id;
-
-
 typedef struct Object_ {
     int replica[REP_NUM + 1];  // 副本
     int* unit[REP_NUM + 1];
@@ -53,14 +42,11 @@ Object object[MAX_OBJECT_NUM];  // 对象的id就是用object数组的index表�
 Disk_Head disk_head[MAX_DISK_NUM];  //磁头数组：[MAX_DISK_NUM]
 
 int T, M, N, V, G;
-int TS; //timestamp
 int disk[MAX_DISK_NUM][MAX_DISK_SIZE][2];  //每块硬盘用三维数组表示，[xx][yy][0]代表object_id，[xx][yy][1]代表block_id（不会超过其size）
 int fre_del[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有删除操作中对象标签为i的对象大小之和
 int fre_write[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有写入操作中对象标签为i的对象大小之和
 int fre_read[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有读取操作中对象标签为i的对象大小之和，同一个对象的多次读取会重复计算
 int tag_block_address[MAX_TAG_NUM];
-std::deque<Request_Id> no_need_to_abort; //在范围内的数组
-
 
 void timestamp_action()  // 时间片对齐事件
 {
@@ -70,28 +56,6 @@ void timestamp_action()  // 时间片对齐事件
 
     fflush(stdout);
 }
-
-void write_to_file(int num1, int num2, int num3,int num4,int num5) {
-    // 固定文件名
-    const char *filename = "output.txt";
-
-    // 以追加模式打开文件
-    std::ofstream file;
-    file.open(filename, std::ios::app);  // 使用 std::ios::app 表示追加模式
-
-    if (!file.is_open()) {
-        // 如果文件打开失败，打印错误信息并退出
-        std::cerr << "Error: Unable to open file " << filename << std::endl;
-        return;
-    }
-
-    // 写入三个整数到文件，以空格分隔，并换行
-    file << num1 << " " << num2 << " " << num3 <<" "<<num4 <<" "<<num5<< std::endl;
-
-    // 关闭文件
-    file.close();
-}
-
 
 inline int max(int a, int b) {
     return (a > b) ? a : b;
@@ -214,7 +178,14 @@ void read_action()  // 对象读取事件
     int request_id, object_id;
     scanf("%d", &n_read);
     // 判断本次是否存在读写
-
+    if(n_read==0)
+    {
+        for (int i = 1; i <= N; i++) {  // 如果n_read = 0，即当前时间片没有请求内容，则所有硬盘的磁头都不动，输出“0”表示没有读操作
+            printf("#\n");
+        }
+        printf("0\n");  // 若当前时间片读取了前面时间片请求的内容，该如何输出？？？
+    }
+    else {
     for (int i = 1; i <= n_read; i++) {
         scanf("%d%d", &request_id, &object_id);
         request[request_id].object_id = object_id;
@@ -225,28 +196,15 @@ void read_action()  // 对象读取事件
         request[request_id].is_done = false;
         request[request_id].is_abort = false;
         request[request_id].unread_block = static_cast<int*>(calloc(request[request_id].object_size + 1, sizeof(int)));  //记得在clean里面free
-        Request_Id requestinfo;
-        requestinfo.requestid=request_id;
-        requestinfo.ts_create=TS;
-        no_need_to_abort.push_back(requestinfo);
-
+//        for (int j = 1; j < request[request_id].object_size + 1; ++j) {
+//            request[request_id].unread_block[j]=0;
+//        }
     }
-    //如果ts_create小于TS-105,则出队
-    if(!no_need_to_abort.empty())
-    {
-        while(TS-no_need_to_abort.front().ts_create>105)
-        {
-            request[no_need_to_abort.front().requestid].is_abort = true;
-            no_need_to_abort.pop_front();
-        }
-    }
-
     req_count += n_read;
     int req_completed = 0;  // 这个时间片完成了多少请求
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         while (token > 0) {
-            write_to_file(TS,i,token,n_read,1);
             int last_status = disk_head[i].last_status; //上一次动作，-1：j; 1：p; 其他数字表示上次的token消耗
             int current_disk_head = disk_head[i].pos;
             int current_point_objid = disk[i][current_disk_head][0];  // disk[i][disk_head[i]][0]表示当前硬盘当前磁头对应位置写入的object_id，未写入是0
@@ -272,6 +230,7 @@ void read_action()  // 对象读取事件
             if (not_find == 0)
             {
                 /* code */
+            
                 // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成）
                 int current_req_id = object[current_point_objid].last_request_point;
                 if (current_req_id!=0) {
@@ -296,11 +255,9 @@ void read_action()  // 对象读取事件
 
                         // 对应请求中，读过的块置1,remiansize减一
                         if (request[current_req_id].unread_block[current_point_objblock] ==
-                            0 && last_status>=16) {  // 没读过才读,如果最后来的请求没有读过这个块，合理推测前面的请求也有可能没读过。
+                            0) {  // 没读过才读,如果最后来的请求没有读过这个块，合理推测前面的请求也有可能没读过。
                             // 但是现在的请求读过这个块的话，暂时认为之前的请求也读过了这个块
-//                                write_to_file(TS,i,token,last_status,ceil);
                             token -= last_status;  // Read动作消耗令牌
-
                             printf("r");
                             request[current_req_id].unread_block[current_point_objblock] = 1;
                             if (--request[current_req_id].remain_size == 0) {
@@ -312,9 +269,7 @@ void read_action()  // 对象读取事件
 
                             // 当前磁头指向的block可以满足若干同一对象请求中的同一个block请求，如果上一个请求存在且未完成才进这个循环
                             while (request[current_req_id].prev_id != 0 &&
-                                    !request[request[current_req_id].prev_id].is_done) {
-                                    write_to_file(TS,i,token,n_read,2);
-
+                                   !request[request[current_req_id].prev_id].is_done) {
                                 current_req_id = request[current_req_id].prev_id;
                                 // 找上一个对该对象的请求看看要不要读，要的话就顺便满足其需求：相应unread_block位置置1
                                 if (request[current_req_id].unread_block[current_point_objblock] == 0) {
@@ -332,15 +287,7 @@ void read_action()  // 对象读取事件
                             disk_head[i].last_status = 1;
                         }
                     } else {
-                        int pass_num;
-                            //  这个地方求余数出现了泄露，会得到负数
-                        if (current_disk_head >= disk_head[i].pos){
-                            pass_num = current_disk_head - disk_head[i].pos ;  // 计算实际上磁头要pass多少次才能到下一个有效的读位
-
-                        }else
-                        {
-                            pass_num = current_disk_head+V - disk_head[i].pos;
-                        }
+                        int pass_num = (current_disk_head - disk_head[i].pos) % V;  // 计算实际上磁头要pass多少次才能到下一个有效的读位
                         //分多种情况，1.token==G，跳还是不跳：此时判断G的令牌数能否支撑pass到目标位置且读取，能就不跳，不能就跳
                         // 2.token!=G，此时判断此时判断G的令牌数能否支撑pass到目标位置，能就pass，不能就结束磁头动作。读的动作让下个while循环去处理
                         if (token == G) {
@@ -409,7 +356,7 @@ void read_action()  // 对象读取事件
         printf("0\n");
 //        break;
     }
-
+}
     fflush(stdout);
 }
 
@@ -464,7 +411,6 @@ int main()
     fflush(stdout);
 
     for (int t = 1; t <= T + EXTRA_TIME; t++) {
-        TS=t;
         timestamp_action();
         delete_action();
         write_action();

@@ -1,8 +1,7 @@
 #include <cstdio>
 #include <cassert>
 #include <cstdlib>
-#include <iostream>
-#include <fstream>
+
 
 #define MAX_DISK_NUM (10 + 1)  // 硬盘最多10个，10+1是为了让你计数方便不从0开始
 #define MAX_DISK_SIZE (16384 + 1)  // 每个硬盘的存储单元数，+1是为了让你计数方便不从0开始 
@@ -61,26 +60,6 @@ void timestamp_action()  // 时间片对齐事件
     fflush(stdout);
 }
 
-void write_to_file(int num1, int num2, int num3,int num4,int num5) {
-    // 固定文件名
-    const char *filename = "output.txt";
-
-    // 以追加模式打开文件
-    std::ofstream file;
-    file.open(filename, std::ios::app);  // 使用 std::ios::app 表示追加模式
-
-    if (!file.is_open()) {
-        // 如果文件打开失败，打印错误信息并退出
-        std::cerr << "Error: Unable to open file " << filename << std::endl;
-        return;
-    }
-
-    // 写入三个整数到文件，以空格分隔，并换行
-    file << num1 << " " << num2 << " " << num3 <<" "<<num4 <<" "<<num5<< std::endl;
-
-    // 关闭文件
-    file.close();
-}
 
 
 inline int max(int a, int b) {

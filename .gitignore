@@ -7,6 +7,9 @@
 !*.java
 !*.cpp
 !*.md
+!*.cmd 
+!*.bat
+
 demos/cpp/test.cpp
 demos/cpp/TestFile/
 demos/cpp/build/CMakeFiles/3.31.5/CompilerIdCXX/CMakeCXXCompilerId.cpp
