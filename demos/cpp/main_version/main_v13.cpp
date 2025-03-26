@@ -7,7 +7,6 @@
 #include <deque>
 #include<map>
 #include<algorithm>
-#include <cmath>
 
 #define MAX_DISK_NUM (10 + 1)  // 硬盘最多10个，10+1是为了让你计数方便不从0开始
 #define MAX_DISK_SIZE (16384 + 1)  // 每个硬盘的存储单元数，+1是为了让你计数方便不从0开始 
@@ -63,84 +62,8 @@ int fre_write[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时�
 int fre_read[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有读取操作中对象标签为i的对象大小之和，同一个对象的多次读取会重复计算
 int tag_block_address[MAX_TAG_NUM];
 std::deque<Request_Id> no_need_to_abort; //在范围内的数组
-void write_to_file(int num1, int num2, int num3,int num4,int num5);
 
-std::vector<int> allocateDisks(const std::vector<std::pair<int, int>>& fre_tag) {
-    // Step 1: Extract top 5 keys and their values
-    std::vector<int> top_keys;
-    std::vector<int> top_values;
-    for (size_t i = 0; i < std::min(fre_tag.size(), size_t(5)); ++i) {
-        top_keys.push_back(fre_tag[i].first);
-        top_values.push_back(fre_tag[i].second);
-    }
 
-    // Step 2: Calculate total value of top 5
-    int total_value = 0;
-    for (int value : top_values) {
-        total_value += value;
-    }
-    std::vector<int> result;
-
-    for (int i=0;i<N;i++)
-    {
-        
-        if(i<std::round(static_cast<double>(top_values[0]) / total_value * N))
-        {
-            result.push_back(top_keys[0]);
-        }
-        else if(i<std::round(static_cast<double>(top_values[1]) / total_value * N))
-        {
-            result.push_back(top_keys[1]);
-
-        }
-        else if(i<std::round(static_cast<double>(top_values[2]) / total_value * N))
-        {
-            result.push_back(top_keys[2]);
-
-        }
-        else if(i<std::round(static_cast<double>(top_values[3]) / total_value * N))
-        {
-            result.push_back(top_keys[3]);
-
-        }
-        else
-        {
-            result.push_back(top_keys[4]);
-        }
-
-    }
-    
-    // // Step 3: Allocate disks based on proportion
-    // std::vector<int> allocations(top_keys.size(), 0); // Store number of disks for each key
-    // int remaining_disks = N; // Total disks to allocate
-
-    // for (size_t i = 0; i < top_values.size(); ++i) {
-    //     // Calculate the proportional allocation (rounded down)
-    //     allocations[i] = static_cast<int>(std::round(static_cast<double>(top_values[i]) / total_value * N));
-    //     remaining_disks -= allocations[i];
-    // }
-
-    // // Adjust remaining disks due to rounding errors
-    // while (remaining_disks > 0) {
-    //     write_to_file(TS,remaining_disks,1,1,1);
-    //     for (size_t i = 0; i < allocations.size() && remaining_disks > 0; ++i) {
-    //         if (allocations[i] < static_cast<int>(std::round(static_cast<double>(top_values[i]) / total_value * N))) {
-    //             allocations[i]++;
-    //             remaining_disks--;
-    //         }
-    //     }
-    // }
-
-    // Step 4: Construct the result array
-    // std::vector<int> result;
-    // for (size_t i = 0; i < allocations.size(); ++i) {
-    //     for (int j = 0; j < allocations[i]; ++j) {
-    //         result.push_back(top_keys[i]);
-    //     }
-    // }
-
-    return result;
-}
 
 void write_to_file(int num1, int num2, int num3,int num4,int num5) {
     // 固定文件名
@@ -348,17 +271,12 @@ void read_action()  // 对象读取事件
             [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
             return a.second > b.second; // 降序排序
         });
-        for(std::pair<int, int> m : fre_tag)
-        {
-            write_to_file(TS,fre_tag.size(),m.first,m.second,1);
+        for (int i = 1; i <= N / 2; i++) {
+            most_fre_index[i] = fre_tag[(i - 1) % M].first;
         }
-        std::vector<int> result = allocateDisks(fre_tag);
-        int temp_index = 1;
-        for (int p : result) {
-            most_fre_index[temp_index] = p;
-            temp_index++;
+        for (int i = 1 + N / 2; i <= N; i++) {
+            most_fre_index[i] = fre_tag[(i - 1- N / 2) % M].first;
         }
-
     }
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数

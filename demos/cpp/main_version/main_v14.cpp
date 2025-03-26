@@ -67,77 +67,41 @@ void write_to_file(int num1, int num2, int num3,int num4,int num5);
 
 std::vector<int> allocateDisks(const std::vector<std::pair<int, int>>& fre_tag) {
     // Step 1: Extract top 5 keys and their values
-    std::vector<int> top_keys;
-    std::vector<int> top_values;
-    for (size_t i = 0; i < std::min(fre_tag.size(), size_t(5)); ++i) {
-        top_keys.push_back(fre_tag[i].first);
-        top_values.push_back(fre_tag[i].second);
+    int num = std::min(N,M);
+    std::vector<int> top_keys(num);
+    std::vector<int> top_values(num);
+    for (int i = 0; i < num; ++i) {
+        top_keys[i]=fre_tag[i+1].first;
+        if(i>0){
+            top_values[i]=fre_tag[i+1].second+top_values[i-1];
+        }else{
+            top_values[i]=fre_tag[i+1].second;
+        }
+        
     }
 
     // Step 2: Calculate total value of top 5
-    int total_value = 0;
-    for (int value : top_values) {
-        total_value += value;
-    }
-    std::vector<int> result;
+    int total_value = top_values.back();
+    // for (int value : top_values) {
+    //     total_value += value;
+    // }
+    std::vector<int> result(N+1);
 
-    for (int i=0;i<N;i++)
+    for (int i=1;i<=N;i++)
     {
-        
-        if(i<std::round(static_cast<double>(top_values[0]) / total_value * N))
-        {
-            result.push_back(top_keys[0]);
+        bool flag=false;
+        for(int j=0;j<num;++j){
+            if(i<std::round(static_cast<double>(top_values[j]) / total_value * N)+1){
+                result[i]=top_keys[j];
+                flag= true;
+                break;
+            }
         }
-        else if(i<std::round(static_cast<double>(top_values[1]) / total_value * N))
-        {
-            result.push_back(top_keys[1]);
-
-        }
-        else if(i<std::round(static_cast<double>(top_values[2]) / total_value * N))
-        {
-            result.push_back(top_keys[2]);
-
-        }
-        else if(i<std::round(static_cast<double>(top_values[3]) / total_value * N))
-        {
-            result.push_back(top_keys[3]);
-
-        }
-        else
-        {
-            result.push_back(top_keys[4]);
-        }
-
+        if(!flag){result[i]=top_keys[0];}
     }
-    
-    // // Step 3: Allocate disks based on proportion
-    // std::vector<int> allocations(top_keys.size(), 0); // Store number of disks for each key
-    // int remaining_disks = N; // Total disks to allocate
-
-    // for (size_t i = 0; i < top_values.size(); ++i) {
-    //     // Calculate the proportional allocation (rounded down)
-    //     allocations[i] = static_cast<int>(std::round(static_cast<double>(top_values[i]) / total_value * N));
-    //     remaining_disks -= allocations[i];
-    // }
-
-    // // Adjust remaining disks due to rounding errors
-    // while (remaining_disks > 0) {
-    //     write_to_file(TS,remaining_disks,1,1,1);
-    //     for (size_t i = 0; i < allocations.size() && remaining_disks > 0; ++i) {
-    //         if (allocations[i] < static_cast<int>(std::round(static_cast<double>(top_values[i]) / total_value * N))) {
-    //             allocations[i]++;
-    //             remaining_disks--;
-    //         }
-    //     }
-    // }
-
-    // Step 4: Construct the result array
-    // std::vector<int> result;
-    // for (size_t i = 0; i < allocations.size(); ++i) {
-    //     for (int j = 0; j < allocations[i]; ++j) {
-    //         result.push_back(top_keys[i]);
-    //     }
-    // }
+    for(int i=1;i<=N/2;i=i+2){
+        std::swap(result[i], result[N+1-i]);
+    }
 
     return result;
 }
@@ -327,7 +291,7 @@ void read_action()  // 对象读取事件
     // if(TS>=86504){write_to_file(TS, 12, no_need_to_abort.size(), n_read, 12);}
     if(!no_need_to_abort.empty())
     {
-        while(TS-no_need_to_abort.front().ts_create>50)
+        while(TS-no_need_to_abort.front().ts_create>75)
         {
             request[no_need_to_abort.front().requestid].is_abort = true;
             no_need_to_abort.pop_front();
@@ -348,28 +312,39 @@ void read_action()  // 对象读取事件
             [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
             return a.second > b.second; // 降序排序
         });
-        for(std::pair<int, int> m : fre_tag)
-        {
-            write_to_file(TS,fre_tag.size(),m.first,m.second,1);
-        }
+        // for(std::pair<int, int> m : fre_tag)
+        // {
+        //     write_to_file(TS,fre_tag.size(),m.first,m.second,1);
+        // }
         std::vector<int> result = allocateDisks(fre_tag);
         int temp_index = 1;
-        for (int p : result) {
-            most_fre_index[temp_index] = p;
-            temp_index++;
+        for(int i=1;i<=N;++i){
+            most_fre_index[i]=result[i];
         }
-
+        // for (int p : result) {
+        //     most_fre_index[temp_index] = p;
+        //     temp_index++;
+        // }
     }
+    static int mycount = 0;
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         while (token > 0) {
             if ((TS - 1) % 1800 == 0) {
                 disk_head[i].pos = tag_block_address[most_fre_index[i]];
                 disk_head[i].last_status = -1;
+                mycount=0;
                 printf("j %d\n", disk_head[i].pos);
                 break;
             }
-            // if(!(disk_head[i].pos>=tag_block_address[most_fre_index[i]]&&disk_head[i].pos<tag_block_address[most_fre_index[i]]+V/M)){
+            else if((TS - 1) % 40 == 0){
+                ++mycount;
+                disk_head[i].pos = tag_block_address[most_fre_index[(i+mycount-1)%N+1]];
+                disk_head[i].last_status = -1;
+                printf("j %d\n", disk_head[i].pos);
+                break;
+            }
+            // else if(!(disk_head[i].pos>=tag_block_address[most_fre_index[i]]&&disk_head[i].pos<tag_block_address[most_fre_index[i]]+V/M)){
             //     disk_head[i].pos = tag_block_address[most_fre_index[i]];
             //     disk_head[i].last_status = -1;
             //     printf("j %d\n", disk_head[i].pos);

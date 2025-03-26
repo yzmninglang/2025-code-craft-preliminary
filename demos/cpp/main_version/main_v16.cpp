@@ -19,6 +19,9 @@
 #define FRE_PER_SLICING (1800)  // 一个长时隙占1800个时间片
 #define EXTRA_TIME (105)  // 判题器额外给出的105个时隙供处理
 
+#define ROLL_TAG_TS_FRE (40)
+#define ABORT_LOW_SCORE_REQ_TS_FRE (75)
+
 typedef struct Request_ {
     int object_id;  // 对象id
     int object_size;  // 对象的size
@@ -41,13 +44,13 @@ typedef struct Object_ {
     int* unit[REP_NUM + 1];
     int size;
     int tag;
+    int true_tag_area[REP_NUM + 1];  // 每个副本真正所在的TAG分区,
     int last_request_point; // 该对象上一次被请求的req_id（如果需要读上上个被请求的req_id就得到request数组读）
     bool is_delete;
 } Object;
 
 typedef struct Disk_Head_ {
     int pos;  // 磁头位置
-    // int token;
     int last_status;  // 磁头的上个动作消耗的令牌数 -1：上个动作是跳，1：上个动作是pass，64-16，上个动作是读；初始化为0，表示第一个时间片刚开始，磁头之前没有任何动作。
 }Disk_Head;
 
@@ -62,82 +65,54 @@ int fre_del[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙
 int fre_write[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有写入操作中对象标签为i的对象大小之和
 int fre_read[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有读取操作中对象标签为i的对象大小之和，同一个对象的多次读取会重复计算
 int tag_block_address[MAX_TAG_NUM];
+int tag_block_address_disk[MAX_DISK_NUM][MAX_TAG_NUM];  //存储了tag在每个disk里面的位置tag_block_address_disk[disk_i][tag]
+int free_block_num[MAX_DISK_NUM][MAX_TAG_NUM];  // 各磁盘每个分区空闲块数量,初始化为V/M
 std::deque<Request_Id> no_need_to_abort; //在范围内的数组
 void write_to_file(int num1, int num2, int num3,int num4,int num5);
 
+
+// 添加根据流量了分配Tag的算法
+#include <numeric>
+std::vector<int> Peak(MAX_TAG_NUM-1,0);   //存储了Tag对应的最大所需存储空间
+std::vector<int> CDF_type(MAX_TAG_NUM,0);
+std::vector<int> indices_Sort(MAX_TAG_NUM-1,0);
+std::vector<int> Disk_size_Tag;
+
 std::vector<int> allocateDisks(const std::vector<std::pair<int, int>>& fre_tag) {
-    // Step 1: Extract top 5 keys and their values
-    std::vector<int> top_keys;
-    std::vector<int> top_values;
-    for (size_t i = 0; i < std::min(fre_tag.size(), size_t(5)); ++i) {
-        top_keys.push_back(fre_tag[i].first);
-        top_values.push_back(fre_tag[i].second);
-    }
-
-    // Step 2: Calculate total value of top 5
-    int total_value = 0;
-    for (int value : top_values) {
-        total_value += value;
-    }
-    std::vector<int> result;
-
-    for (int i=0;i<N;i++)
-    {
+    // 得到请求频率最高的前num个TAG，并计算其频次的区间和
+    int num = std::min(N,M);
+    std::vector<int> top_keys(num);
+    std::vector<int> top_values(num);
+    for (int i = 0; i < num; ++i) {
+        top_keys[i]=fre_tag[i+1].first;
+        if(i>0){
+            top_values[i]=fre_tag[i+1].second+top_values[i-1];  // 区间和
+        }else{
+            top_values[i]=fre_tag[i+1].second;
+        }
         
-        if(i<std::round(static_cast<double>(top_values[0]) / total_value * N))
-        {
-            result.push_back(top_keys[0]);
-        }
-        else if(i<std::round(static_cast<double>(top_values[1]) / total_value * N))
-        {
-            result.push_back(top_keys[1]);
-
-        }
-        else if(i<std::round(static_cast<double>(top_values[2]) / total_value * N))
-        {
-            result.push_back(top_keys[2]);
-
-        }
-        else if(i<std::round(static_cast<double>(top_values[3]) / total_value * N))
-        {
-            result.push_back(top_keys[3]);
-
-        }
-        else
-        {
-            result.push_back(top_keys[4]);
-        }
-
     }
-    
-    // // Step 3: Allocate disks based on proportion
-    // std::vector<int> allocations(top_keys.size(), 0); // Store number of disks for each key
-    // int remaining_disks = N; // Total disks to allocate
 
-    // for (size_t i = 0; i < top_values.size(); ++i) {
-    //     // Calculate the proportional allocation (rounded down)
-    //     allocations[i] = static_cast<int>(std::round(static_cast<double>(top_values[i]) / total_value * N));
-    //     remaining_disks -= allocations[i];
-    // }
+    int total_value = top_values.back();
+    std::vector<int> result(N+1);
 
-    // // Adjust remaining disks due to rounding errors
-    // while (remaining_disks > 0) {
-    //     write_to_file(TS,remaining_disks,1,1,1);
-    //     for (size_t i = 0; i < allocations.size() && remaining_disks > 0; ++i) {
-    //         if (allocations[i] < static_cast<int>(std::round(static_cast<double>(top_values[i]) / total_value * N))) {
-    //             allocations[i]++;
-    //             remaining_disks--;
-    //         }
-    //     }
-    // }
-
-    // Step 4: Construct the result array
-    // std::vector<int> result;
-    // for (size_t i = 0; i < allocations.size(); ++i) {
-    //     for (int j = 0; j < allocations[i]; ++j) {
-    //         result.push_back(top_keys[i]);
-    //     }
-    // }
+    for (int i=1;i<=N;i++)  // 根据区间和，将TAG按请求频次比例分给disk
+    {
+        bool flag=false;
+        for(int j=0;j<num;++j){
+            if(i<std::round(static_cast<double>(top_values[j]) / total_value * N)+1){
+                result[i]=top_keys[j];
+                flag= true;
+                break;
+            }
+        }
+        if(!flag){result[i]=top_keys[0];}
+    }
+    // 实现打散，假设tag比例是6，3，1，那么原本可能就是前六个盘读tag1，7-9读tag2，10都tag3
+    // 但是一个内容是连续三个盘存的，打散一点的话，应该可能读到更多的内容
+    for(int i=1;i<=N/2;i=i+2){
+        std::swap(result[i], result[N+1-i]);
+    }
 
     return result;
 }
@@ -213,6 +188,7 @@ void delete_action()  // 对象删除事件
         }
         for (int j = 1; j <= REP_NUM; j++) {
             do_object_delete(object[id].unit[j], disk[object[id].replica[j]], object[id].size);
+            free_block_num[object[id].replica[j]][object[id].true_tag_area[j]] += object[id].size;
         }
         object[id].is_delete = true;
     }
@@ -225,31 +201,31 @@ void delete_action()  // 对象删除事件
     fflush(stdout);
 }
 
-void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object_id)
+void do_object_write(int* object_unit, int (*disk_unit)[2],int diskid, int size, int object_id, bool flag, int j)
 {
     int current_write_point = 0;
-    int start_address = tag_block_address[object[object_id].tag];  // 每个TAG分区在各个盘中的首地址（相同）
-    for (int i = start_address; i < start_address + V / M; i++) {
+    int start_address = tag_block_address_disk[diskid][object[object_id].tag];  // 每个TAG分区在各个盘中的首地址（相同）
+    object[object_id].true_tag_area[j] = object[object_id].tag;
+    // 该对象不能在当前分区完整存下
+    if (flag) {
+        // 找到可以完整存下对象的分区
+        object[object_id].true_tag_area[j] = object[object_id].tag % M + 1;
+        while (1) {
+            if (free_block_num[object[object_id].replica[j]][object[object_id].true_tag_area[j]] - size >= 0) break; 
+            object[object_id].true_tag_area[j] = object[object_id].true_tag_area[j] % M + 1;
+        }
+        start_address = tag_block_address_disk[diskid][object[object_id].true_tag_area[j]];
+        write_to_file(start_address,diskid,1,1,9);
+
+    }
+    for (int i = start_address; i < start_address+Disk_size_Tag[object[object_id].true_tag_area[j]-1]; i++) {
         if (disk_unit[i][0] == 0) {  // 如果该存储单元是空的则存，不是空的去下一个单元，所以不是连续存储
             disk_unit[i][0] = object_id;  // disk[0]存的是对象id
             disk_unit[i][1] = ++current_write_point; //disk[1]存的是对象块的编号
             object_unit[current_write_point] = i;  // object_unit即unit[j]是数组名（数组首地址），存的是存储单元编号
             if (current_write_point == size) {
+                // write_to_file(1,1,1,1,9);
                 break;  // 存完了这个对象
-            }
-        }
-    }
-
-    // 如果遍历完当前TAG分区，该对象还没存完，就找到空闲存储空间存下。注意，实际上，每个disk都有若干空闲的TAG分区，如有必要，后续可以you'hua。
-    if (current_write_point < size) {
-        for (int i = 1; i <= V; i++) {
-            if (disk_unit[i][0] == 0) {  // 如果该存储单元是空的则存，不是空的去下一个单元，所以不是连续存储
-                disk_unit[i][0] = object_id;  // disk[0]存的是对象id
-                disk_unit[i][1] = ++current_write_point;  //disk[1]存的是对象块的编号
-                object_unit[current_write_point] = i;  // object_unit即unit[j]是数组名（数组首地址），存的是存储单元编号
-                if (current_write_point == size) {
-                    break;  // 存完了这个对象
-                }
             }
         }
     }
@@ -270,7 +246,11 @@ void write_action()  // 对象写入事件
         for (int j = 1; j <= REP_NUM; j++) {
             object[id].replica[j] = (id + j) % N + 1;  // 得到主盘与两个副本盘编号
             object[id].unit[j] = static_cast<int*>(malloc(sizeof(int) * (size + 1)));  // unit中的元素对应相应副本的首地址
-            do_object_write(object[id].unit[j], disk[object[id].replica[j]], size, id);
+            bool flag = false;
+            if (free_block_num[object[id].replica[j]][object[id].tag] < object[id].size) flag = true;
+            // 如果要存到别的分区去,也要全存在一个分区里
+            do_object_write(object[id].unit[j], disk[object[id].replica[j]],object[id].replica[j], size, id, flag, j);
+            free_block_num[object[id].replica[j]][object[id].true_tag_area[j]] -= object[id].size;
         }
 
         printf("%d\n", id);  // 打印对象id
@@ -295,18 +275,6 @@ void read_action()  // 对象读取事件
     int request_id, object_id;
     scanf("%d", &n_read);
 
-    // if (TS % 1800 == 0) {
-    //     int max_tag_num = N / 2;  // 选出前N/2个请求频率最高的TAG分区进行jump，每两个disk负责一个TAG
-    // }
-    // 判断本次是否存在读写
-    // if(n_read==0)
-    // {
-    //     for (int i = 1; i <= N; i++) {  // 如果n_read = 0，即当前时间片没有请求内容，则所有硬盘的磁头都不动，输出“0”表示没有读操作
-    //         printf("#\n");
-    //     }
-    //     printf("0\n");  // 若当前时间片读取了前面时间片请求的内容，该如何输出？？？
-    // }
-    // else {
     for (int i = 1; i <= n_read; i++) {
         scanf("%d%d", &request_id, &object_id);
         request[request_id].object_id = object_id;
@@ -327,7 +295,7 @@ void read_action()  // 对象读取事件
     // if(TS>=86504){write_to_file(TS, 12, no_need_to_abort.size(), n_read, 12);}
     if(!no_need_to_abort.empty())
     {
-        while(TS-no_need_to_abort.front().ts_create>50)
+        while(TS-no_need_to_abort.front().ts_create > ABORT_LOW_SCORE_REQ_TS_FRE)
         {
             request[no_need_to_abort.front().requestid].is_abort = true;
             no_need_to_abort.pop_front();
@@ -337,10 +305,10 @@ void read_action()  // 对象读取事件
     // if(TS>=86504){write_to_file(TS, 22, no_need_to_abort.size(), n_read, 22);}
     req_count += n_read;
     int req_completed = 0;  // 这个时间片完成了多少请求
+    // 每个大时隙（1800）初，将流行的TAG按比例分给disk，各磁头跳到分配的TAG分区首地址
+    std::vector<std::pair<int, int>> fre_tag;
     static std::vector<int> most_fre_index(N + 1);
     if ((TS - 1) % 1800 == 0) {
-        // int fre_tag[MAX_TAG_NUM];
-        std::vector<std::pair<int, int>> fre_tag;
         for (int tag = 1; tag <= M; tag++) {
             fre_tag.push_back(std::make_pair(tag, fre_read[tag][TS / 1800 + 1]));
         }
@@ -353,36 +321,57 @@ void read_action()  // 对象读取事件
             write_to_file(TS,fre_tag.size(),m.first,m.second,1);
         }
         std::vector<int> result = allocateDisks(fre_tag);
-        int temp_index = 1;
-        for (int p : result) {
-            most_fre_index[temp_index] = p;
-            temp_index++;
+        for(int i=1;i<=N;++i){
+            most_fre_index[i] = result[i];
+            // write_to_file(TS,1,1,most_fre_index[i],1);
         }
-
     }
+    static int mycount = 0;
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
+        // 尝试无效备注:如果磁头不在指定的TAG分区内,则跳回
         while (token > 0) {
+            // 尝试无效备注:复用后面的PASS or JUMP代码,性能反而降低,所以还是直接跳吧
             if ((TS - 1) % 1800 == 0) {
-                disk_head[i].pos = tag_block_address[most_fre_index[i]];
-                disk_head[i].last_status = -1;
-                printf("j %d\n", disk_head[i].pos);
-                break;
+                int jump =0;
+
+                mycount=0;   
+                for (auto it = fre_tag.begin(); it != fre_tag.end(); ++it) {
+                   if(tag_block_address_disk[i][it->first]!=0)
+                   {
+                    disk_head[i].last_status = -1;
+                    // write_to_file(1,1,1,1,disk_head[i].pos);
+                    disk_head[i].pos = tag_block_address_disk[i][it->first];
+                    printf("j %d\n", disk_head[i].pos);
+                    jump=1;
+                    break;
+                   }
+                }
+                if (jump==1)
+                {
+                    break;
+                }
+                
             }
-            // if(!(disk_head[i].pos>=tag_block_address[most_fre_index[i]]&&disk_head[i].pos<tag_block_address[most_fre_index[i]]+V/M)){
-            //     disk_head[i].pos = tag_block_address[most_fre_index[i]];
+            // else if((TS - 1) % ROLL_TAG_TS_FRE == 0){
+            //     ++mycount;
+            //     // 如果回到了分配的TAG分区,则跳到该分区的中间
+            //     // if ((i + mycount - 1) % N + 1 == i) disk_head[i].pos = tag_block_address[most_fre_index[i]] + V/M/2;
+                
+            //     disk_head[i].pos = tag_block_address_disk[i][most_fre_index[(i+mycount-1)%N+1]];
             //     disk_head[i].last_status = -1;
+            //     write_to_file(1,1,1,1,disk_head[i].pos);
             //     printf("j %d\n", disk_head[i].pos);
             //     break;
             // }
             // if(TS>=86504){write_to_file(TS, i, token, n_read, 1);}
-            int last_status = disk_head[i].last_status; //上一次动作，-1：j; 1：p; 其他数字表示上次的token消耗
             int current_disk_head = disk_head[i].pos;
+            int last_status = disk_head[i].last_status; //上一次动作，-1：j; 1：p; 其他数字表示上次的token消耗
             int current_point_objid = disk[i][current_disk_head][0];  // disk[i][disk_head[i]][0]表示当前硬盘当前磁头对应位置写入的object_id，未写入是0
-            int not_find =0; //表征是不是没有找到
-            int tempcout=0;
             int current_point_objblock = disk[i][current_disk_head][1];  // 对象的块的编号
-            while (current_point_objid == 0 || request[object[current_point_objid].last_request_point].is_done || request[object[current_point_objid].last_request_point].is_abort) {
+            int not_find =0; //表征是不是没有找到
+            while (current_point_objid == 0 || request[object[current_point_objid].last_request_point].is_done ||
+                request[object[current_point_objid].last_request_point].is_abort) {
                 // 如果当前磁头指向空位置或者是所指向位置所对应的请求已经被删除或者是丢弃（感觉is_abort有可能没有用了）
                 // 假设对同一个对象的请求中，后到的总是不早于先到的done，也就是说如果后到的请求都done，那么先到的肯定也done
                 current_disk_head = current_disk_head % V + 1;
@@ -394,10 +383,8 @@ void read_action()  // 对象读取事件
                     not_find =1;
                     break;
                 }
-//                printf()
-                tempcout++;
             }
-            int tmep;
+
             if (not_find == 0)
             {
                 // if(TS>=86504){write_to_file(TS, i, token, n_read, 2);}
@@ -430,7 +417,7 @@ void read_action()  // 对象读取事件
                         if (request[current_req_id].unread_block[current_point_objblock] ==
                             0 && last_status>=16) {  // 没读过才读,如果最后来的请求没有读过这个块，合理推测前面的请求也有可能没读过。
                             // 但是现在的请求读过这个块的话，暂时认为之前的请求也读过了这个块
-//                                write_to_file(TS,i,token,last_status,ceil);
+                            // write_to_file(TS,i,token,last_status,ceil);
                             token -= last_status;  // Read动作消耗令牌
 
                             printf("r");
@@ -559,6 +546,52 @@ void clean()
     }
 }
 
+
+void Calculate_Peak_store()
+{
+
+    for(int i=1;i<=M;i++)
+    {
+
+        for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
+            CDF_type[i]=CDF_type[i]+fre_read[i][j]-fre_del[i][j];
+            if(CDF_type[i]>=Peak[i-1])
+            {
+                Peak[i-1] = CDF_type[i];
+            }
+        }
+        // write_to_file(i,1,1,1,Peak[i]);
+    }
+    
+    for (int i =0;i<Peak.size();i++)
+    {
+        indices_Sort[i]=i;
+    }
+    std::sort(indices_Sort.begin(), indices_Sort.end(), [&](int a, int b) {
+        return Peak[a] > Peak[b]; // 比较 data[a] 和 data[b]
+    });
+    std::vector<int> sorted_data;
+    int sum = std::accumulate(Peak.begin(), Peak.end(), 0);
+    for (int peak_i : Peak)
+    {
+        // write_to_file(1,1,1,peak_i,0.0);
+        Disk_size_Tag.push_back(floor(static_cast<double>(peak_i)/double(sum)*N*V/REP_NUM));
+    }
+    for (int index : indices_Sort) {
+        sorted_data.push_back(Peak[index]);
+    }
+    for (int index : indices_Sort) {
+        sorted_data.push_back(Peak[index]);
+    }
+    Peak = sorted_data;
+    // for(int i=0;i<M;i++)
+    // {
+    //     write_to_file(Peak[i],Disk_size_Tag[i],indices_Sort[i],Disk_size_Tag[i], 0.0);
+    // }
+
+}
+
+
 int main()
 {
     scanf("%d%d%d%d%d", &T, &M, &N, &V, &G);
@@ -583,20 +616,48 @@ int main()
             scanf("%d", &fre_read[i][j]);
         }
     }
+    Calculate_Peak_store();
 
-    for (int i = 1; i <= N; i++) {
-        disk_head[i].pos = 1;
-        disk_head[i].last_status = 0;
-        // disk_head[i].token = G;
-    }
     // 对每个盘进行分区操作
+    int temp_disk_point=1;
+    int disk_i=1;
+    for(int i =0;i<REP_NUM;i++)
+    {
+        for (int tag_id = 0; tag_id < M; tag_id++) {
+            // 对于tag_block_address_disk需要+1，因为是从1开始算的
+            tag_block_address_disk[disk_i][tag_id+1]=temp_disk_point;
+
+            temp_disk_point=temp_disk_point+Disk_size_Tag[indices_Sort[tag_id]];
+            if (temp_disk_point>=V)
+            {
+                // 如果虚拟指针超过了V，那么下一个disk第一元素作为当前Tag的开始地址
+                tag_block_address_disk[disk_i+1][tag_id+1]=1;
+                temp_disk_point = temp_disk_point-V+1;
+                free_block_num[disk_i+1][tag_id+1] = temp_disk_point;
+                disk_i = disk_i+1;
+
+            }else{
+                free_block_num[disk_i][tag_id+1] = Disk_size_Tag[indices_Sort[tag_id]];
+            }
+            // write_to_file(indices_Sort[tag_id],disk_i,1,1,temp_disk_point);
+        }
+    }
+
     for (int tag_id = 1; tag_id <= M; tag_id++) {
         tag_block_address[tag_id] = (tag_id - 1) * V / M + 1;  // 每个盘的TAG分区一样
     }
 
+    for (int i = 1; i <= N; i++) {
+        disk_head[i].pos = 1;
+        disk_head[i].last_status = 0;
+        // for (int tag_id = 1; tag_id <= M; tag_id++) {
+        //     // free_block_num[i][tag_id] = V/M;
+        //     write_to_file(1,1,1,tag_block_address_disk[i][tag_id],free_block_num[i][tag_id]);
+        // }
+    }
+
     printf("OK\n");
     fflush(stdout);
-
     for (int t = 1; t <= T + EXTRA_TIME; t++) {
         TS=t;
         timestamp_action();
