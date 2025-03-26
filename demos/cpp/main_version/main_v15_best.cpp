@@ -5,7 +5,6 @@
 #include <fstream>
 #include <vector>
 #include <deque>
-#include <list>
 #include<map>
 #include<algorithm>
 #include <cmath>
@@ -54,14 +53,6 @@ typedef struct Disk_Head_ {
     int pos;  // 磁头位置
     int last_status;  // 磁头的上个动作消耗的令牌数 -1：上个动作是跳，1：上个动作是pass，64-16，上个动作是读；初始化为0，表示第一个时间片刚开始，磁头之前没有任何动作。
 }Disk_Head;
-
-struct FreeBlock {
-    int start;
-    int size;
-    FreeBlock(int s, int sz) : start(s), size(sz) {}
-};
-
-std::vector<std::vector<std::list<FreeBlock>>> free_blocks;
 
 Request request[MAX_REQUEST_NUM];  // 用一个数组保存所有请求
 Object object[MAX_OBJECT_NUM];  // 对象的id就是用object数组的index表示
@@ -153,53 +144,6 @@ inline int max(int a, int b) {
     return (a > b) ? a : b;
 }
 
-void merge_free_blocks(int disk_id, int tag, int start, int size) {
-    auto& blocks = free_blocks[disk_id][tag];
-    FreeBlock new_block(start, size);
-    auto it = blocks.begin();
-
-    // 查找插入位置
-    while (it != blocks.end() && it->start < new_block.start) ++it;
-    it = blocks.insert(it, new_block);
-
-    // 合并前一块
-    if (it != blocks.begin()) {
-        auto prev = std::prev(it);
-        if (prev->start + prev->size == it->start) {
-            prev->size += it->size;
-            blocks.erase(it);
-            it = prev;
-        }
-    }
-
-    // 合并后一块
-    auto next = std::next(it);
-    if (next != blocks.end() && it->start + it->size == next->start) {
-        it->size += next->size;
-        blocks.erase(next);
-    }
-}
-
-void process_deletion(int obj_id) {
-    Object* obj = &object[obj_id];
-    for (int j = 1; j <= REP_NUM; ++j) {
-        int disk_id = obj->replica[j];
-        int tag = obj->true_tag_area[j];
-        int start = obj->unit[j][1];
-        int size = obj->size;
-
-        // 释放磁盘单元
-        for (int k = 0; k < size; ++k) {
-            int pos = start + k;
-            disk[disk_id][pos][0] = 0;
-            disk[disk_id][pos][1] = 0;
-        }
-
-        // 合并空闲块
-        merge_free_blocks(disk_id, tag, start, size);
-    }
-}
-
 void do_object_delete(const int* object_unit, int (*disk_unit)[2], int size)
 {
     for (int i = 1; i <= size; i++) {
@@ -233,9 +177,8 @@ void delete_action()  // 对象删除事件
             }
             current_id = request[current_id].prev_id;  // 该对象在编号为current_id的请求的前一次请求id
         }
-        process_deletion(id);
         for (int j = 1; j <= REP_NUM; j++) {
-            // do_object_delete(object[id].unit[j], disk[object[id].replica[j]], object[id].size);
+            do_object_delete(object[id].unit[j], disk[object[id].replica[j]], object[id].size);
             free_block_num[object[id].replica[j]][object[id].true_tag_area[j]] += object[id].size;
         }
         object[id].is_delete = true;
@@ -249,82 +192,32 @@ void delete_action()  // 对象删除事件
     fflush(stdout);
 }
 
-bool allocate_contiguous_blocks(int disk_id, int tag, int size, int& start_pos) {
-    auto& blocks = free_blocks[disk_id][tag];
-    for (auto it = blocks.begin(); it != blocks.end(); ++it) {
-        if (it->size >= size) {
-            start_pos = it->start;
-            // 分配后处理剩余空间
-            int remaining = it->size - size;
-            if (remaining > 0) {
-                it->start += size;
-                it->size = remaining;
-            } else {
-                blocks.erase(it);
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
 void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object_id, bool flag, int j)
 {
-    int tag = object[object_id].tag;
-    bool allocated = false;
-    int start_pos;
-
-    // 先尝试原tag区域
-    if (allocate_contiguous_blocks(object[object_id].replica[j], tag, size, start_pos)) {
-        allocated = true;
-        object[object_id].true_tag_area[j] = tag;
-    } else {
-        // 尝试其他tag区域
-        for (int t = 1; t <= M; ++t) {
-            if (t == tag) continue;
-            if (allocate_contiguous_blocks(object[object_id].replica[j], t, size, start_pos)) {
-                allocated = true;
-                object[object_id].true_tag_area[j] = t;
-                break;
+    int current_write_point = 0;
+    int start_address = tag_block_address[object[object_id].tag];  // 每个TAG分区在各个盘中的首地址（相同）
+    object[object_id].true_tag_area[j] = object[object_id].tag;
+    // 该对象不能在当前分区完整存下
+    if (flag) {
+        // 找到可以完整存下对象的分区
+        object[object_id].true_tag_area[j] = object[object_id].tag % M + 1;
+        while (1) {
+            if (free_block_num[object[object_id].replica[j]][object[object_id].true_tag_area[j]] - size >= 0) break; 
+            object[object_id].true_tag_area[j] = object[object_id].true_tag_area[j] % M + 1;
+        }
+        start_address = tag_block_address[object[object_id].true_tag_area[j]];
+    }
+    for (int i = start_address; i < start_address + V / M; i++) {
+        if (disk_unit[i][0] == 0) {  // 如果该存储单元是空的则存，不是空的去下一个单元，所以不是连续存储
+            disk_unit[i][0] = object_id;  // disk[0]存的是对象id
+            disk_unit[i][1] = ++current_write_point; //disk[1]存的是对象块的编号
+            object_unit[current_write_point] = i;  // object_unit即unit[j]是数组名（数组首地址），存的是存储单元编号
+            if (current_write_point == size) {
+                break;  // 存完了这个对象
             }
         }
     }
-
-    if (allocated) {
-        // 标记磁盘单元
-        for (int k = 0; k < size; ++k) {
-            int pos = start_pos + k;
-            disk[object[object_id].replica[j]][pos][0] = object_id;
-            disk[object[object_id].replica[j]][pos][1] = k + 1;
-            object_unit[k + 1] = pos;
-        }
-    } else {
-        // 处理分配失败（题目保证有足够空间）
-    }
-    // int current_write_point = 0;
-    // int start_address = tag_block_address[object[object_id].tag];  // 每个TAG分区在各个盘中的首地址（相同）
-    // object[object_id].true_tag_area[j] = object[object_id].tag;
-    // // 该对象不能在当前分区完整存下
-    // if (flag) {
-    //     // 找到可以完整存下对象的分区
-    //     object[object_id].true_tag_area[j] = object[object_id].tag % M + 1;
-    //     while (1) {
-    //         if (free_block_num[object[object_id].replica[j]][object[object_id].true_tag_area[j]] - size >= 0) break; 
-    //         object[object_id].true_tag_area[j] = object[object_id].true_tag_area[j] % M + 1;
-    //     }
-    //     start_address = tag_block_address[object[object_id].true_tag_area[j]];
-    // }
-    // for (int i = start_address; i < start_address + V / M; i++) {
-    //     if (disk_unit[i][0] == 0) {  // 如果该存储单元是空的则存，不是空的去下一个单元，所以不是连续存储
-    //         disk_unit[i][0] = object_id;  // disk[0]存的是对象id
-    //         disk_unit[i][1] = ++current_write_point; //disk[1]存的是对象块的编号
-    //         object_unit[current_write_point] = i;  // object_unit即unit[j]是数组名（数组首地址），存的是存储单元编号
-    //         if (current_write_point == size) {
-    //             break;  // 存完了这个对象
-    //         }
-    //     }
-    // }
-    // assert(current_write_point == size);
+    assert(current_write_point == size);
 }
 
 void write_action()  // 对象写入事件
@@ -659,17 +552,6 @@ int main()
         disk_head[i].last_status = 0;
         for (int tag_id = 1; tag_id <= M; tag_id++) {
             free_block_num[i][tag_id] = V/M;
-        }
-    }
-
-    // 初始化每个磁盘每个tag的空闲块
-    free_blocks.resize(N + 1); // 硬盘编号从1到N
-    for (int i = 1; i <= N; ++i) {
-        free_blocks[i].resize(M + 1); // 标签编号从1到M
-        for (int tag = 1; tag <= M; ++tag) {
-            int start = (tag - 1) * (V / M) + 1;
-            int size = V / M;
-            free_blocks[i][tag].emplace_back(start, size);
         }
     }
 
