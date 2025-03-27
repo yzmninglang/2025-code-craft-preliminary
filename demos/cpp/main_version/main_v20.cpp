@@ -311,7 +311,6 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
     else {
         
         // 这个地方可以尝试从后面的tag插入
-        // int idx = tag;
         for (int t = 1; t <= M; ++t) {
             if (t == tag) continue;
             if (allocate_contiguous_blocks(object[object_id].replica[j], t, size, start_pos)) {
