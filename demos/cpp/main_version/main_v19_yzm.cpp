@@ -42,7 +42,7 @@ typedef struct Request_id_{
 
 typedef struct Object_ {
     int replica[REP_NUM + 1];  // 副本
-    int* unit[REP_NUM + 1];
+    int* unit[REP_NUM + 1];   //对应的是第j个副本第i个块
     int size;
     int tag;
     int true_tag_area[REP_NUM + 1];  // 每个副本真正所在的TAG分区
@@ -67,7 +67,11 @@ Request request[MAX_REQUEST_NUM];  // 用一个数组保存所有请求
 Object object[MAX_OBJECT_NUM];  // 对象的id就是用object数组的index表示
 Disk_Head disk_head[MAX_DISK_NUM];  //磁头数组：[MAX_DISK_NUM]
 
-int T, M, N, V, G;
+int alway_same_tag =0;   //看是连续相同tag分区的次数
+int last_read_tag =0;    //上一次度的tagid
+
+
+int T, M, N, V, G;  //T代表总的时隙，M代表对象标签个数，N代表硬盘个数，V代表每个硬盘的大小，G代表一个TS的token的个数
 int TS; //timestamp
 int disk[MAX_DISK_NUM][MAX_DISK_SIZE][2];  //每块硬盘用三维数组表示，[xx][yy][0]代表object_id，[xx][yy][1]代表block_id（不会超过其size）
 int fre_del[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有删除操作中对象标签为i的对象大小之和
@@ -186,12 +190,12 @@ void process_deletion(int obj_id) {
     for (int j = 1; j <= REP_NUM; ++j) {
         int disk_id = obj->replica[j];
         int tag = obj->true_tag_area[j];
-        int start = obj->unit[j][1];
+        int start = obj->unit[j][1];    //第j个副本的第一个块
         int size = obj->size;
 
         // 释放磁盘单元
         for (int k = 0; k < size; ++k) {
-            int pos = start + k;
+            int pos = start + k;   //这个地方一定是连续存的吗
             disk[disk_id][pos][0] = 0;
             disk[disk_id][pos][1] = 0;
         }
@@ -421,6 +425,7 @@ void read_action()  // 对象读取事件
             most_fre_index[i] = result[i];
         }
     }
+    
     static int mycount = 0;
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
@@ -438,6 +443,8 @@ void read_action()  // 对象读取事件
                 ++mycount;
                 // 如果回到了分配的TAG分区,则跳到该分区的中间
                 // if ((i + mycount - 1) % N + 1 == i) disk_head[i].pos = tag_block_address[most_fre_index[i]] + V/M/2;
+                // if()
+                if (last_read_tag == )
                 disk_head[i].pos = tag_block_address[most_fre_index[(i+mycount-1)%N+1]];
                 disk_head[i].last_status = -1;
                 printf("j %d\n", disk_head[i].pos);
