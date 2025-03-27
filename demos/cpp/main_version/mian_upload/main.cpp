@@ -311,8 +311,13 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
     else {
         
         // 这个地方可以尝试从后面的tag插入
-        // int idx = tag;
-        for (int t = 1; t <= M; ++t) {
+        int t = tag;
+        int idx=0;
+        while (idx<M)
+        {
+            // 将t指向下一个tag
+            t = (t++)%M+1;
+            idx++;
             if (t == tag) continue;
             if (allocate_contiguous_blocks(object[object_id].replica[j], t, size, start_pos)) {
 
@@ -320,8 +325,13 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
                 object[object_id].true_tag_area[j] = t;
                 break;
             }
+
         }
+        // for (int t = 1; t <= M; ++t) {
+
+        // }
     }
+
 
     if (allocated) {
         // 标记磁盘单元
