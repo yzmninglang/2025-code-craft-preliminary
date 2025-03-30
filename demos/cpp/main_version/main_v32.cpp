@@ -21,7 +21,7 @@
 #define FRE_PER_SLICING (1800)  // 一个长时隙占1800个时间片
 #define EXTRA_TIME (105)  // 判题器额外给出的105个时隙供处理
 
-#define ROLL_TAG_TS_FRE (100)
+#define ROLL_TAG_TS_FRE (120)
 #define ABORT_LOW_SCORE_REQ_TS_FRE (70)
 // #define TS_ABORT_START (43)   //开始丢弃的TS差值
 // #define TS_ABORT_STEP (1)    //丢弃TS的步长
@@ -465,30 +465,9 @@ int Randomstart()
         return random_number;
 }
 
-
-
-std::vector<int> get_sorted_indices(const std::vector<int>& diskblock, int max_value) {
-    // 初始化索引数组，值为 1 到 max_value
-    std::vector<int> idx(max_value);
-    for (int i = 0; i < max_value; ++i) {
-        idx[i] = i + 1; // 索引从 1 开始
-    }
-
-    // 使用自定义比较函数对索引数组进行排序
-    std::sort(idx.begin(), idx.end(), [&diskblock](int a, int b) {
-        return diskblock[a - 1] > diskblock[b - 1]; // 按照 diskblock 的值从高到低排序
-    });
-
-    return idx;
-}
-
-std::vector<int> diskblockidx;
 int start_read =0;
 
 std::string   diskcout[MAX_DISK_NUM] ;  //给每一个数组设置cout数组
-std::vector<int> diskblock[MAX_DISK_SIZE];    //每个disk对应的可用block
-
-
 
 void read_action()  // 对象读取事件
 {
@@ -695,7 +674,6 @@ void read_action()  // 对象读取事件
                             token -= last_status;  // Read动作消耗令牌
 
                             // printf("r");
-                            diskblock[i]++;
                             diskcout[i]=diskcout[i]+"r";
 
                             request[current_req_id].unread_block[current_point_objblock] = 1;
@@ -739,7 +717,6 @@ void read_action()  // 对象读取事件
                         disk_head[i].last_status = ceil_temp;
                         disk_head[i].pos = disk_head[i].pos % V + 1;
                         // printf("r");
-                        diskblock[i]++;
                         diskcout[i]=diskcout[i]+"r";
 
 
@@ -827,8 +804,6 @@ void read_action()  // 对象读取事件
         // if(TS>=86504){write_to_file(TS, i, token, n_read, 4);}
         }
     }
-
-    diskblockidx = get_sorted_indices(diskblock,MAX_DISK_SIZE);
     for(int i=1;i<=N;i++)
     {
         std::cout<<diskcout[i];
