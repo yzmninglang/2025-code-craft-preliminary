@@ -645,7 +645,7 @@ void read_action()  // 对象读取事件
                         }
                     } 
                     
-                    else if(pass_num<10 && token>= Token_Cost_byLaststatus(disk_head[i].last_status))
+                    else if(pass_num<8 && token>= Token_Cost_byLaststatus(disk_head[i].last_status))
                     {
 
 

@@ -23,6 +23,8 @@
 
 #define ROLL_TAG_TS_FRE (180)
 #define ABORT_LOW_SCORE_REQ_TS_FRE (50)
+#define TS_ABORT_START (43)   //开始丢弃的TS差值
+#define TS_ABORT_STEP (1)    //丢弃TS的步长
 
 typedef struct Request_ {
     int object_id;  // 对象id
@@ -385,6 +387,36 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
     }
 }
 
+int Token_Cost(int last_status,int pass_num)  //(last_status,pass_num)
+{
+    int cost_token =0;
+    for (int i = 0;i<pass_num;i++)
+    {
+        int ceil_num;
+        if (last_status>1)
+        {ceil_num = max(16,(last_status * 8 + 9) / 10); }
+        else
+        {ceil_num =64;}
+        last_status=ceil_num;
+        cost_token = cost_token+last_status;
+    }
+    return cost_token,last_status;
+    
+}
+
+int Token_Cost_byLaststatus(int last_status)  //(last_status)
+{
+    if (last_status<=1)
+    {
+        return 64;
+    }
+    else{
+        int ceil = max(16,(last_status * 8 + 9) / 10); 
+        return ceil;
+    }
+}
+
+
 void write_action()  // 对象写入事件
 {
     int n_write;  // 这一时间片写入对象的个数
@@ -394,6 +426,7 @@ void write_action()  // 对象写入事件
         scanf("%d%d%d", &id, &size, &tag_id);
         object[id].last_request_point = 0;
         object[id].size = size;
+        // write_to_file(id,tag_id,size,0,0);
         object[id].tag = tag_id;
         object[id].is_delete = false;
         for (int j = 1; j <= REP_NUM; j++) {
@@ -445,29 +478,24 @@ void read_action()  // 对象读取事件
 
     }
     //如果ts_create小于TS-105,则出队
-    // if(TS>=86504){write_to_file(TS, 12, no_need_to_abort.size(), n_read, 12);}
+    // if(TS>=86504){write_to_file(TS, 12, no_need_to_abort.size(), n_read, 12);}'    
     if(!no_need_to_abort.empty())
     {
         for (auto it = no_need_to_abort.begin(); it != no_need_to_abort.end(); ) {
-            if ((request[it->requestid].object_size == 1 && TS - it->ts_create > 48) ||
-            (request[it->requestid].object_size == 2 && TS - it->ts_create > 49) ||
-            (request[it->requestid].object_size == 3 && TS - it->ts_create > 50) ||
-            (request[it->requestid].object_size == 4 && TS - it->ts_create > 51) ||
-            (request[it->requestid].object_size == 5 && TS - it->ts_create > 52)) {
+            if ((request[it->requestid].object_size == 1 && TS - it->ts_create > TS_ABORT_START+0*TS_ABORT_STEP) ||
+            (request[it->requestid].object_size == 2 && TS - it->ts_create > TS_ABORT_START+1*TS_ABORT_STEP) ||
+            (request[it->requestid].object_size == 3 && TS - it->ts_create > TS_ABORT_START+2*TS_ABORT_STEP) ||
+            (request[it->requestid].object_size == 4 && TS - it->ts_create > TS_ABORT_START+3*TS_ABORT_STEP) ||
+            (request[it->requestid].object_size == 5 && TS - it->ts_create > TS_ABORT_START+4*TS_ABORT_STEP)  ){
                 request[it->requestid].is_abort = true;
                 no_need_to_abort.erase(it++);
                 if(no_need_to_abort.empty()) break;
             }
             else ++it;
         }
-        // while(TS-no_need_to_abort.front().ts_create > ABORT_LOW_SCORE_REQ_TS_FRE)
-        // {
-        //     request[no_need_to_abort.front().requestid].is_abort = true;
-        //     no_need_to_abort.pop_front();
-        //     if(no_need_to_abort.empty()){break;}
-        // }
     }
-    // if(TS>=86504){write_to_file(TS, 22, no_need_to_abort.size(), n_read, 22);}
+
+
     req_count += n_read;
     int req_completed = 0;  // 这个时间片完成了多少请求
     // 每个大时隙（1800）初，将流行的TAG按比例分给disk，各磁头跳到分配的TAG分区首地址
@@ -495,7 +523,14 @@ void read_action()  // 对象读取事件
     // 创建一个均匀分布，范围从min到max（包含）
     std::uniform_int_distribution<int> distribution(1, N);
     int mycount_ = distribution(g);
-    for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
+    int temp_index =1;
+    static int start =0;
+    start ++;
+    for (int temp_index = 0; temp_index < N; temp_index++) {  // 对每个磁头都进行操作
+
+        int i = (temp_index+start)%N +1;
+
+
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         // 尝试无效备注:如果磁头不在指定的TAG分区内,则跳回
         while (token > 0) {
@@ -538,11 +573,40 @@ void read_action()  // 对象读取事件
 
             if (not_find == 0)
             {
+                int temp_current_disk_head = disk_head[i].pos;
+                // int last_status = disk_head[i].last_status; //上一次动作，-1：j; 1：p; 其他数字表示上次的token消耗
+                int temp_current_point_objid = disk[i][temp_current_disk_head][0];  // disk[i][disk_head[i]][0]表示当前硬盘当前磁头对应位置写入的object_id，未写入是0
+                int temp_current_point_objblock = disk[i][temp_current_disk_head][1];  // 对象的块的编号
+                int block_count =0; //表征是不是没有找到
+                while (temp_current_point_objid != 0 && !request[object[temp_current_point_objid].last_request_point].is_done &&
+                    !request[object[temp_current_point_objid].last_request_point].is_abort && object[temp_current_point_objid].last_request_point != 0)
+                {
+                    temp_current_disk_head = temp_current_disk_head % V + 1;
+                    temp_current_point_objid = disk[i][temp_current_disk_head][0];
+                    temp_current_point_objblock = disk[i][temp_current_disk_head][1];
+                    block_count++;
+                }
+                
                 // if(TS>=86504){write_to_file(TS, i, token, n_read, 2);}
                 /* code */
                 // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成）
                 int current_req_id = object[current_point_objid].last_request_point;
                 if (current_req_id!=0) {
+                    int pass_num;
+                    //  这个地方求余数出现了泄露，会得到负数
+                    if (current_disk_head >= disk_head[i].pos){
+                        pass_num = current_disk_head - disk_head[i].pos ;  // 计算实际上磁头要pass多少次才能到下一个有效的读位
+
+                    }else
+                    {
+                        pass_num = current_disk_head+V - disk_head[i].pos;
+                    }
+                    // int ceil_read = Token_Cost(last_status); 
+                    int ceil_read,status01;
+                    // if(TS>=86504){write_to_file(TS, i, token, n_read, 10);}
+                    ceil_read,status01=Token_Cost(disk_head[i].last_status,pass_num);
+
+
                     // if(TS>=86504){write_to_file(TS, i, token, n_read, 10);}
                     if (current_disk_head == disk_head[i].pos) {  // 当前磁头没有额外移动可以直接读
                         // 根据last_status计算这一次读要消耗的令牌数，如果剩余令牌>=要消耗的令牌，则读取成功，否则进入下一个时间片
@@ -600,7 +664,22 @@ void read_action()  // 对象读取事件
                             disk_head[i].pos = disk_head[i].pos % V + 1;
                             disk_head[i].last_status = 1;
                         }
-                    } else {
+                    } 
+                    
+                    else if(pass_num<12 && token>= Token_Cost_byLaststatus(disk_head[i].last_status)) 
+                    {
+
+
+                        int ceil_temp = Token_Cost_byLaststatus(disk_head[i].last_status);
+                        token -=ceil_temp;
+                        disk_head[i].last_status = ceil_temp;
+                        disk_head[i].pos = disk_head[i].pos % V + 1;
+                        printf("r");
+
+                    } 
+                    
+                    
+                    else {
                         int pass_num;
                             //  这个地方求余数出现了泄露，会得到负数
                         if (current_disk_head >= disk_head[i].pos){

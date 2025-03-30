@@ -426,14 +426,29 @@ int Token_Cost(int last_status,int pass_num)  //(last_status,pass_num)
     int cost_token =0;
     for (int i = 0;i<pass_num;i++)
     {
+        int ceil_num;
+        if (last_status>1)
+        {ceil_num = max(16,(last_status * 8 + 9) / 10); }
+        else
+        {ceil_num =64;}
+        last_status=ceil_num;
         cost_token = cost_token+last_status;
-        int ceil = max(16,(last_status * 8 + 9) / 10); 
-        last_status=ceil;
     }
     return cost_token,last_status;
     
 }
 
+int Token_Cost_byLaststatus(int last_status)  //(last_status)
+{
+    if (last_status<=1)
+    {
+        return 64;
+    }
+    else{
+        int ceil = max(16,(last_status * 8 + 9) / 10); 
+        return ceil;
+    }
+}
 
 std::vector<int> disk_jump_flag(MAX_DISK_NUM,0);
 void read_action()  // 对象读取事件
@@ -555,8 +570,20 @@ void read_action()  // 对象读取事件
                 // while循环之后，就能保证current_disk_head指向的是可以读的内容（该对象被请求了而且该请求没有被完成）
                 int current_req_id = object[current_point_objid].last_request_point;
                 if (current_req_id!=0) {
+                    int pass_num;
+                    //  这个地方求余数出现了泄露，会得到负数
+                    if (current_disk_head >= disk_head[i].pos){
+                        pass_num = current_disk_head - disk_head[i].pos ;  // 计算实际上磁头要pass多少次才能到下一个有效的读位
+
+                    }else
+                    {
+                        pass_num = current_disk_head+V - disk_head[i].pos;
+                    }
+                    // int ceil_read = Token_Cost(last_status); 
+                    int ceil_read,status01;
                     // if(TS>=86504){write_to_file(TS, i, token, n_read, 10);}
-                    if (current_disk_head == disk_head[i].pos) {  // 当前磁头没有额外移动可以直接读
+                    ceil_read,status01=Token_Cost(disk_head[i].last_status,pass_num);
+                    if (current_disk_head == disk_head[i].pos ) {  // 当前磁头没有额外移动可以直接读
                         // 根据last_status计算这一次读要消耗的令牌数，如果剩余令牌>=要消耗的令牌，则读取成功，否则进入下一个时间片
                         int ceil = max(16,(last_status * 8 + 9) / 10);  // (last_status*8+9)/10就能保证是last_status*0.8还向上取整
                         if (last_status <= 1) {  // 上个动作是跳或者pass，或者是第一个时间片首次"Read"，令牌-64
@@ -606,13 +633,25 @@ void read_action()  // 对象读取事件
                                     }
                                 }
                             }
-                        } else {  // 读过了就Pass
+                        } 
+                        else {  // 读过了就Pass
                             printf("p");
                             --token;
                             disk_head[i].pos = disk_head[i].pos % V + 1;
                             disk_head[i].last_status = 1;
                         }
-                    } else {
+                    } 
+                    // else if(pass_num<10 && token>= ceil_read)
+                    // {
+
+
+                    //     int ceil_temp = Token_Cost_byLaststatus(disk_head[i].last_status);
+                    //     token -=ceil_temp;
+                    //     disk_head[i].last_status = ceil_temp;
+                    //     printf("r");
+
+                    // } 
+                    else {
                         int pass_num;
                             //  这个地方求余数出现了泄露，会得到负数
                         if (current_disk_head >= disk_head[i].pos){
@@ -633,20 +672,20 @@ void read_action()  // 对象读取事件
                                 disk_head[i].last_status = -1;
                                 break;
                             } 
-                            else if(pass_num<10)
-                            {
-                                int token_cost;
-                                token_cost,last_status= Token_Cost(last_status,pass_num);
-                                token -= token_cost;
+                            // else if(pass_num<10)
+                            // {
+                            //     int token_cost;
+                            //     token_cost,last_status= Token_Cost(last_status,pass_num);
+                            //     token -= token_cost;
   
-                                while (pass_num > 0) {
-                                    --pass_num;
-                                    printf("r");
-                                }
+                            //     while (pass_num > 0) {
+                            //         --pass_num;
+                            //         printf("r");
+                            //     }
 
-                                disk_head[i].pos = current_disk_head;
-                                disk_head[i].last_status = last_status;
-                            } 
+                            //     disk_head[i].pos = current_disk_head;
+                            //     disk_head[i].last_status = last_status;
+                            // } 
                             
                             else //pass_num+64<=token的情况，通过pass之后还有余力读
                             {
@@ -659,21 +698,21 @@ void read_action()  // 对象读取事件
                                 disk_head[i].last_status = 1;
                             }
                         } 
-                        else if(pass_num<10 && token>last_status)
-                        {
+                        // else if(pass_num<10 && token>last_status)
+                        // {
                        
-                            int token_cost;
-                            token_cost,last_status= Token_Cost(last_status,pass_num);
-                            token -= token_cost;
+                        //     int token_cost;
+                        //     token_cost,last_status= Token_Cost(last_status,pass_num);
+                        //     token -= token_cost;
 
-                            while (pass_num > 0) {
-                                --pass_num;
-                                printf("r");
-                            }
+                        //     while (pass_num > 0) {
+                        //         --pass_num;
+                        //         printf("r");
+                        //     }
 
-                            disk_head[i].pos = current_disk_head;
-                            disk_head[i].last_status = last_status;
-                        } 
+                        //     disk_head[i].pos = current_disk_head;
+                        //     disk_head[i].last_status = last_status;
+                        // } 
                         else {
                             if (pass_num + 64 > token) {
                                 printf("#\n");
