@@ -420,21 +420,6 @@ void write_action()  // 对象写入事件
 
     fflush(stdout);
 }
-
-int Token_Cost(int last_status,int pass_num)  //(last_status,pass_num)
-{
-    int cost_token =0;
-    for (int i = 0;i<pass_num;i++)
-    {
-        cost_token = cost_token+last_status;
-        int ceil = max(16,(last_status * 8 + 9) / 10); 
-        last_status=ceil;
-    }
-    return cost_token,last_status;
-    
-}
-
-
 std::vector<int> disk_jump_flag(MAX_DISK_NUM,0);
 void read_action()  // 对象读取事件
 {
@@ -496,9 +481,7 @@ void read_action()  // 对象读取事件
         }
     }
     static int mycount = 0;
-    
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
-
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         // 尝试无效备注:如果磁头不在指定的TAG分区内,则跳回
         while (token > 0) {
@@ -511,8 +494,8 @@ void read_action()  // 对象读取事件
                 break;
             }
             else if((TS - 1) % ROLL_TAG_TS_FRE == 0 || disk_jump_flag[i]==1){
-                // if(disk_head[i].last_status<=1 && token == G)
-                // {
+                if(disk_head[i].last_status==1 && token == G && disk_jump_flag[i]==1)
+                {
                     ++mycount;
                     // 如果回到了分配的TAG分区,则跳到该分区的中间
                     // if ((i + mycount - 1) % N + 1 == i) disk_head[i].pos = tag_block_address[most_fre_index[i]] + V/M/2;
@@ -521,10 +504,10 @@ void read_action()  // 对象读取事件
                     printf("j %d\n", disk_head[i].pos);
                     disk_jump_flag[i]=0;
                     break;
-                // }else
-                // {
-                //     disk_jump_flag[i]=1;
-                // }
+                }else 
+                {
+                    disk_jump_flag[i]=1;
+                }
 
             }
             // if(TS>=86504){write_to_file(TS, i, token, n_read, 1);}
@@ -632,23 +615,7 @@ void read_action()  // 对象读取事件
                                 disk_head[i].pos = current_disk_head;
                                 disk_head[i].last_status = -1;
                                 break;
-                            } 
-                            else if(pass_num<10)
-                            {
-                                int token_cost;
-                                token_cost,last_status= Token_Cost(last_status,pass_num);
-                                token -= token_cost;
-  
-                                while (pass_num > 0) {
-                                    --pass_num;
-                                    printf("r");
-                                }
-
-                                disk_head[i].pos = current_disk_head;
-                                disk_head[i].last_status = last_status;
-                            } 
-                            
-                            else //pass_num+64<=token的情况，通过pass之后还有余力读
+                            } else //pass_num+64<=token的情况，通过pass之后还有余力读
                             {
                                 token = token - pass_num;
                                 while (pass_num > 0) {
@@ -658,29 +625,11 @@ void read_action()  // 对象读取事件
                                 disk_head[i].pos = current_disk_head;
                                 disk_head[i].last_status = 1;
                             }
-                        } 
-                        else if(pass_num<10 && token>last_status)
-                        {
-                       
-                            int token_cost;
-                            token_cost,last_status= Token_Cost(last_status,pass_num);
-                            token -= token_cost;
-
-                            while (pass_num > 0) {
-                                --pass_num;
-                                printf("r");
-                            }
-
-                            disk_head[i].pos = current_disk_head;
-                            disk_head[i].last_status = last_status;
-                        } 
-                        else {
+                        } else {
                             if (pass_num + 64 > token) {
                                 printf("#\n");
                                 break;
-                            } 
-
-                            else {
+                            } else {
                                 token = token - pass_num;
                                 while (pass_num > 0) {
                                     --pass_num;

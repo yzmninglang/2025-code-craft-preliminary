@@ -78,6 +78,18 @@ int free_block_num[MAX_DISK_NUM][MAX_TAG_NUM];  // 各磁盘每个分区空闲�
 std::deque<Request_Id> no_need_to_abort; //在范围内的数组
 void write_to_file(int num1, int num2, int num3,int num4,int num5);
 
+
+
+// 增加了存储排序的内容：20250324yzm
+#include <numeric>
+std::vector<int> Peak(MAX_TAG_NUM-1,0);   //存储了Tag对应的最大所需存储空间
+std::vector<int> CDF_type(MAX_TAG_NUM,0);
+std::vector<int> indices_Sort(MAX_TAG_NUM-1,0); //对应的Peak排名，第0个是最大的
+std::vector<int> Disk_size_Tag;
+std::vector<int> Sort_index(MAX_TAG_NUM-1,0);   //对应的第t个TAG的peak排名，值是从0开始
+
+
+
 std::vector<int> allocateDisks(const std::vector<std::pair<int, int>>& fre_tag) {
     // 得到请求频率最高的前num个TAG，并计算其频次的区间和
     int num = std::min(N,M);
@@ -311,18 +323,25 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
     else {
         
         // 这个地方可以尝试从后面的tag插入
-        int t = tag;
+        int t = tag-1;
         int idx=0;
         while (idx<M)
         {
             // 将t指向下一个tag
-            t = (t++)%M+1;
+            // t = (t++)%M+1;
+            // 由于indioce
+            if (object_id==6756)
+            {
+                write_to_file(1111,t,1,1,1);
+            }
+            
+            t = indices_Sort[(Sort_index[t]%M+1)%M];
             idx++;
-            if (t == tag) continue;
+            if (t == tag-1) continue;
             if (allocate_contiguous_blocks(object[object_id].replica[j], t, size, start_pos)) {
 
                 allocated = true;
-                object[object_id].true_tag_area[j] = t;
+                object[object_id].true_tag_area[j] = t+1;
                 break;
             }
 
@@ -421,21 +440,6 @@ void write_action()  // 对象写入事件
     fflush(stdout);
 }
 
-int Token_Cost(int last_status,int pass_num)  //(last_status,pass_num)
-{
-    int cost_token =0;
-    for (int i = 0;i<pass_num;i++)
-    {
-        cost_token = cost_token+last_status;
-        int ceil = max(16,(last_status * 8 + 9) / 10); 
-        last_status=ceil;
-    }
-    return cost_token,last_status;
-    
-}
-
-
-std::vector<int> disk_jump_flag(MAX_DISK_NUM,0);
 void read_action()  // 对象读取事件
 {
     static int req_count = 0;
@@ -496,9 +500,7 @@ void read_action()  // 对象读取事件
         }
     }
     static int mycount = 0;
-    
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
-
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         // 尝试无效备注:如果磁头不在指定的TAG分区内,则跳回
         while (token > 0) {
@@ -510,22 +512,14 @@ void read_action()  // 对象读取事件
                 printf("j %d\n", disk_head[i].pos);
                 break;
             }
-            else if((TS - 1) % ROLL_TAG_TS_FRE == 0 || disk_jump_flag[i]==1){
-                // if(disk_head[i].last_status<=1 && token == G)
-                // {
-                    ++mycount;
-                    // 如果回到了分配的TAG分区,则跳到该分区的中间
-                    // if ((i + mycount - 1) % N + 1 == i) disk_head[i].pos = tag_block_address[most_fre_index[i]] + V/M/2;
-                    disk_head[i].pos = tag_block_address[most_fre_index[(i+mycount-1)%N+1]];
-                    disk_head[i].last_status = -1;
-                    printf("j %d\n", disk_head[i].pos);
-                    disk_jump_flag[i]=0;
-                    break;
-                // }else
-                // {
-                //     disk_jump_flag[i]=1;
-                // }
-
+            else if((TS - 1) % ROLL_TAG_TS_FRE == 0){
+                ++mycount;
+                // 如果回到了分配的TAG分区,则跳到该分区的中间
+                // if ((i + mycount - 1) % N + 1 == i) disk_head[i].pos = tag_block_address[most_fre_index[i]] + V/M/2;
+                disk_head[i].pos = tag_block_address[most_fre_index[(i+mycount-1)%N+1]];
+                disk_head[i].last_status = -1;
+                printf("j %d\n", disk_head[i].pos);
+                break;
             }
             // if(TS>=86504){write_to_file(TS, i, token, n_read, 1);}
             int current_disk_head = disk_head[i].pos;
@@ -632,23 +626,7 @@ void read_action()  // 对象读取事件
                                 disk_head[i].pos = current_disk_head;
                                 disk_head[i].last_status = -1;
                                 break;
-                            } 
-                            else if(pass_num<10)
-                            {
-                                int token_cost;
-                                token_cost,last_status= Token_Cost(last_status,pass_num);
-                                token -= token_cost;
-  
-                                while (pass_num > 0) {
-                                    --pass_num;
-                                    printf("r");
-                                }
-
-                                disk_head[i].pos = current_disk_head;
-                                disk_head[i].last_status = last_status;
-                            } 
-                            
-                            else //pass_num+64<=token的情况，通过pass之后还有余力读
+                            } else //pass_num+64<=token的情况，通过pass之后还有余力读
                             {
                                 token = token - pass_num;
                                 while (pass_num > 0) {
@@ -658,29 +636,11 @@ void read_action()  // 对象读取事件
                                 disk_head[i].pos = current_disk_head;
                                 disk_head[i].last_status = 1;
                             }
-                        } 
-                        else if(pass_num<10 && token>last_status)
-                        {
-                       
-                            int token_cost;
-                            token_cost,last_status= Token_Cost(last_status,pass_num);
-                            token -= token_cost;
-
-                            while (pass_num > 0) {
-                                --pass_num;
-                                printf("r");
-                            }
-
-                            disk_head[i].pos = current_disk_head;
-                            disk_head[i].last_status = last_status;
-                        } 
-                        else {
+                        } else {
                             if (pass_num + 64 > token) {
                                 printf("#\n");
                                 break;
-                            } 
-
-                            else {
+                            } else {
                                 token = token - pass_num;
                                 while (pass_num > 0) {
                                     --pass_num;
@@ -743,6 +703,49 @@ void clean()
     }
 }
 
+void Calculate_Peak_store()
+{
+    for(int i=1;i<=M;i++)
+    {
+
+        for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
+            CDF_type[i]=CDF_type[i]+fre_read[i][j]-fre_del[i][j];
+            if(CDF_type[i]>=Peak[i-1])
+            {
+                Peak[i-1] = CDF_type[i];
+            }
+        }
+        // write_to_file(i,1,1,1,Peak[i]);
+    }
+    
+    for (int i =0;i<Peak.size();i++)
+    {
+        indices_Sort[i]=i;  //这个是第i个tag对应的peak排名
+    }
+    std::sort(indices_Sort.begin(), indices_Sort.end(), [&](int a, int b) {
+        return Peak[a] > Peak[b]; // 比较 data[a] 和 data[b]
+    });
+    std::vector<int> sorted_data;
+    int sum = std::accumulate(Peak.begin(), Peak.end(), 0);
+    for (int peak_i : Peak)
+    {
+        // write_to_file(1,1,1,peak_i,0.0);
+        // 这个版本中没有将所有的disk看成一个整体，而是对每一个盘进行分区
+        Disk_size_Tag.push_back(floor(static_cast<double>(peak_i)/double(sum)*V));
+    }
+    for (int index : indices_Sort) {
+        sorted_data.push_back(Peak[index]);
+    }
+    for (int index : indices_Sort) {
+        sorted_data.push_back(Peak[index]);
+    }
+    Peak = sorted_data;
+    for(int i=0;i<M;i++)
+    {
+        write_to_file(Peak[i],Disk_size_Tag[i],indices_Sort[i],Disk_size_Tag[i], 0.0);
+    }
+
+}
 int main()
 {
     scanf("%d%d%d%d%d", &T, &M, &N, &V, &G);
@@ -768,26 +771,49 @@ int main()
         }
     }
 
+    Calculate_Peak_store();
+    for(int i=0;i<M;i++)
+    {
+        Disk_size_Tag[i]=V/M;
+        Sort_index[indices_Sort[i]] = i;
+    }
     // 对每个盘进行分区操作
+    int temp_disk_point=1;
     for (int tag_id = 1; tag_id <= M; tag_id++) {
-        tag_block_address[tag_id] = (tag_id - 1) * V / M + 1;  // 每个盘的TAG分区一样
+
+        tag_block_address[indices_Sort[tag_id-1]+1] = temp_disk_point;  // 每个盘的TAG分区一样
+        temp_disk_point = temp_disk_point + Disk_size_Tag[indices_Sort[tag_id-1]];
     }
 
+
+    // // 对每个盘进行分区操作
+    // for (int tag_id = 1; tag_id <= M; tag_id++) {
+    //     tag_block_address[tag_id] = (tag_id - 1) * V / M + 1;  // 每个盘的TAG分区一样
+    // }
     for (int i = 1; i <= N; i++) {
         disk_head[i].pos = 1;
         disk_head[i].last_status = 0;
         for (int tag_id = 1; tag_id <= M; tag_id++) {
-            free_block_num[i][tag_id] = V/M;
+            free_block_num[i][tag_id] = Disk_size_Tag[tag_id-1];
+            // write_to_file(1,i,tag_id,1,free_block_num[i][tag_id]);
+
         }
     }
+    // for (int i = 1; i <= N; i++) {
+    //     disk_head[i].pos = 1;
+    //     disk_head[i].last_status = 0;
+    //     for (int tag_id = 1; tag_id <= M; tag_id++) {
+    //         free_block_num[i][tag_id] = V/M;
+    //     }
+    // }
 
     // 初始化每个磁盘每个tag的空闲块
     free_blocks.resize(N + 1); // 硬盘编号从1到N
     for (int i = 1; i <= N; ++i) {
         free_blocks[i].resize(M + 1); // 标签编号从1到M
         for (int tag = 1; tag <= M; ++tag) {
-            int start = (tag - 1) * (V / M) + 1;
-            int size = V / M;
+            int start = tag_block_address[tag];
+            int size = Disk_size_Tag[tag-1];
             free_blocks[i][tag].emplace_back(start, size);
         }
     }

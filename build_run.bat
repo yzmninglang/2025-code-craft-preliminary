@@ -59,7 +59,7 @@ if %ERRORLEVEL% neq 0 (
 
 REM 运行 Python 命令
 echo 正在运行 Python 脚本...
-python "%PYTHON_SCRIPT%" "%INTERACTOR%" "%INPUT_FILE%" "%MAIN_FOLDER%\main.exe" -d -r 9303 9304
+python "%PYTHON_SCRIPT%" "%INTERACTOR%" "%INPUT_FILE%" "%MAIN_FOLDER%\main.exe" -d -r 1800 9303 24121 56000 84601
 if %ERRORLEVEL% neq 0 (
     echo 错误: Python 脚本运行失败。
     pause

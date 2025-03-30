@@ -6,6 +6,7 @@
 #include <vector>
 #include <deque>
 #include <list>
+#include <random>
 #include<map>
 #include<algorithm>
 #include <cmath>
@@ -20,8 +21,8 @@
 #define FRE_PER_SLICING (1800)  // 一个长时隙占1800个时间片
 #define EXTRA_TIME (105)  // 判题器额外给出的105个时隙供处理
 
-#define ROLL_TAG_TS_FRE (40)
-#define ABORT_LOW_SCORE_REQ_TS_FRE (75)
+#define ROLL_TAG_TS_FRE (180)
+#define ABORT_LOW_SCORE_REQ_TS_FRE (50)
 
 typedef struct Request_ {
     int object_id;  // 对象id
@@ -75,7 +76,8 @@ int fre_write[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时�
 int fre_read[MAX_TAG_NUM][MAX_SLOT_NUM];  // 第i行第j个元素表示在j时隙内，所有读取操作中对象标签为i的对象大小之和，同一个对象的多次读取会重复计算
 int tag_block_address[MAX_TAG_NUM];
 int free_block_num[MAX_DISK_NUM][MAX_TAG_NUM];  // 各磁盘每个分区空闲块数量,初始化为V/M
-std::deque<Request_Id> no_need_to_abort; //在范围内的数组
+// std::deque<Request_Id> no_need_to_abort; //在范围内的数组
+std::list<Request_Id> no_need_to_abort; //在范围内的数组
 void write_to_file(int num1, int num2, int num3,int num4,int num5);
 
 std::vector<int> allocateDisks(const std::vector<std::pair<int, int>>& fre_tag) {
@@ -110,9 +112,13 @@ std::vector<int> allocateDisks(const std::vector<std::pair<int, int>>& fre_tag) 
     }
     // 实现打散，假设tag比例是6，3，1，那么原本可能就是前六个盘读tag1，7-9读tag2，10都tag3
     // 但是一个内容是连续三个盘存的，打散一点的话，应该可能读到更多的内容
-    for(int i=1;i<=N/2;i=i+2){
-        std::swap(result[i], result[N+1-i]);
-    }
+    // 使用全局种子创建随机数生成器
+    std::mt19937 g(TS);
+    // 打乱vector中的元素
+    std::shuffle(result.begin() + 1, result.end(), g);
+    // for(int i=1;i<=N/2;i=i+2){
+    //     std::swap(result[i], result[N+1-i]);
+    // }
 
     return result;
 }
@@ -194,9 +200,9 @@ void process_deletion(int obj_id) {
             // 释放disk对应的位置
             disk[disk_id][pos][0] = 0;
             disk[disk_id][pos][1] = 0;
-        // 合并空闲块
-        // merge_free_blocks(disk_id, tag, start, size);
-        merge_free_blocks(disk_id, tag, pos);
+            // 合并空闲块
+            // merge_free_blocks(disk_id, tag, start, size);
+            merge_free_blocks(disk_id, tag, pos);
         }
 
 
@@ -301,15 +307,12 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
         object[object_id].true_tag_area[j] = tag;
 
     } 
-    else if(decide_allocate_discontiguous_blocks(object[object_id].replica[j], tag, size))
-    {
-
+    else if(decide_allocate_discontiguous_blocks(object[object_id].replica[j], tag, size)) {
         // write_to_file
         discontiguous_allocated=true;
         object[object_id].true_tag_area[j] = tag;
     }
-    else {
-        
+    else {  
         // 这个地方可以尝试从后面的tag插入
         int t = tag;
         int idx=0;
@@ -332,7 +335,6 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
         // }
     }
 
-
     if (allocated) {
         // 标记磁盘单元
         for (int k = 0; k < size; ++k) {
@@ -341,8 +343,8 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
             disk[object[object_id].replica[j]][pos][1] = k + 1;
             object_unit[k + 1] = pos;
         }
-    } else if (discontiguous_allocated)
-    {
+    }
+    else if (discontiguous_allocated) {
         /* code */
         int disk_id =object[object_id].replica[j];
         auto& blocks = free_blocks[disk_id][tag];   //第disk_id的第tag个blocks，是一个链表
@@ -378,13 +380,9 @@ void do_object_write(int* object_unit, int (*disk_unit)[2], int size, int object
         }
 
     }
-    
-    
     else {
         // 处理分配失败（题目保证有足够空间）
     }
-
- 
 }
 
 void write_action()  // 对象写入事件
@@ -421,21 +419,6 @@ void write_action()  // 对象写入事件
     fflush(stdout);
 }
 
-int Token_Cost(int last_status,int pass_num)  //(last_status,pass_num)
-{
-    int cost_token =0;
-    for (int i = 0;i<pass_num;i++)
-    {
-        cost_token = cost_token+last_status;
-        int ceil = max(16,(last_status * 8 + 9) / 10); 
-        last_status=ceil;
-    }
-    return cost_token,last_status;
-    
-}
-
-
-std::vector<int> disk_jump_flag(MAX_DISK_NUM,0);
 void read_action()  // 对象读取事件
 {
     static int req_count = 0;
@@ -465,12 +448,24 @@ void read_action()  // 对象读取事件
     // if(TS>=86504){write_to_file(TS, 12, no_need_to_abort.size(), n_read, 12);}
     if(!no_need_to_abort.empty())
     {
-        while(TS-no_need_to_abort.front().ts_create > ABORT_LOW_SCORE_REQ_TS_FRE)
-        {
-            request[no_need_to_abort.front().requestid].is_abort = true;
-            no_need_to_abort.pop_front();
-            if(no_need_to_abort.empty()){break;}
+        for (auto it = no_need_to_abort.begin(); it != no_need_to_abort.end(); ) {
+            if ((request[it->requestid].object_size == 1 && TS - it->ts_create > 48) ||
+            (request[it->requestid].object_size == 2 && TS - it->ts_create > 49) ||
+            (request[it->requestid].object_size == 3 && TS - it->ts_create > 50) ||
+            (request[it->requestid].object_size == 4 && TS - it->ts_create > 51) ||
+            (request[it->requestid].object_size == 5 && TS - it->ts_create > 52)) {
+                request[it->requestid].is_abort = true;
+                no_need_to_abort.erase(it++);
+                if(no_need_to_abort.empty()) break;
+            }
+            else ++it;
         }
+        // while(TS-no_need_to_abort.front().ts_create > ABORT_LOW_SCORE_REQ_TS_FRE)
+        // {
+        //     request[no_need_to_abort.front().requestid].is_abort = true;
+        //     no_need_to_abort.pop_front();
+        //     if(no_need_to_abort.empty()){break;}
+        // }
     }
     // if(TS>=86504){write_to_file(TS, 22, no_need_to_abort.size(), n_read, 22);}
     req_count += n_read;
@@ -495,37 +490,30 @@ void read_action()  // 对象读取事件
             most_fre_index[i] = result[i];
         }
     }
-    static int mycount = 0;
-    
+    // static int mycount[MAX_DISK_NUM] = {0};
+    std::mt19937 g(TS);
+    // 创建一个均匀分布，范围从min到max（包含）
+    std::uniform_int_distribution<int> distribution(1, N);
+    int mycount_ = distribution(g);
     for (int i = 1; i <= N; i++) {  // 对每个磁头都进行操作
-
         int token = G;  // 时间片初始化  // 当前时间片的可消耗令牌数
         // 尝试无效备注:如果磁头不在指定的TAG分区内,则跳回
         while (token > 0) {
             // 尝试无效备注:复用后面的PASS or JUMP代码,性能反而降低,所以还是直接跳吧
             if ((TS - 1) % 1800 == 0) {
-                mycount=0;
+                // mycount[i]=0;
                 disk_head[i].pos = tag_block_address[most_fre_index[i]];
                 disk_head[i].last_status = -1;
                 printf("j %d\n", disk_head[i].pos);
                 break;
             }
-            else if((TS - 1) % ROLL_TAG_TS_FRE == 0 || disk_jump_flag[i]==1){
-                // if(disk_head[i].last_status<=1 && token == G)
-                // {
-                    ++mycount;
-                    // 如果回到了分配的TAG分区,则跳到该分区的中间
-                    // if ((i + mycount - 1) % N + 1 == i) disk_head[i].pos = tag_block_address[most_fre_index[i]] + V/M/2;
-                    disk_head[i].pos = tag_block_address[most_fre_index[(i+mycount-1)%N+1]];
-                    disk_head[i].last_status = -1;
-                    printf("j %d\n", disk_head[i].pos);
-                    disk_jump_flag[i]=0;
-                    break;
-                // }else
-                // {
-                //     disk_jump_flag[i]=1;
-                // }
-
+            else if((TS - 1) % ROLL_TAG_TS_FRE == 0){
+                // ++mycount[i];
+                disk_head[i].pos = tag_block_address[most_fre_index[(i+mycount_-1)%N+1]];
+                // disk_head[i].pos = tag_block_address[most_fre_index[(i+mycount[i]-1)%N+1]];
+                disk_head[i].last_status = -1;
+                printf("j %d\n", disk_head[i].pos);
+                break;
             }
             // if(TS>=86504){write_to_file(TS, i, token, n_read, 1);}
             int current_disk_head = disk_head[i].pos;
@@ -534,7 +522,7 @@ void read_action()  // 对象读取事件
             int current_point_objblock = disk[i][current_disk_head][1];  // 对象的块的编号
             int not_find =0; //表征是不是没有找到
             while (current_point_objid == 0 || request[object[current_point_objid].last_request_point].is_done ||
-                request[object[current_point_objid].last_request_point].is_abort) {
+                request[object[current_point_objid].last_request_point].is_abort || object[current_point_objid].last_request_point == 0) {
                 // 如果当前磁头指向空位置或者是所指向位置所对应的请求已经被删除或者是丢弃（感觉is_abort有可能没有用了）
                 // 假设对同一个对象的请求中，后到的总是不早于先到的done，也就是说如果后到的请求都done，那么先到的肯定也done
                 current_disk_head = current_disk_head % V + 1;
@@ -632,23 +620,7 @@ void read_action()  // 对象读取事件
                                 disk_head[i].pos = current_disk_head;
                                 disk_head[i].last_status = -1;
                                 break;
-                            } 
-                            else if(pass_num<10)
-                            {
-                                int token_cost;
-                                token_cost,last_status= Token_Cost(last_status,pass_num);
-                                token -= token_cost;
-  
-                                while (pass_num > 0) {
-                                    --pass_num;
-                                    printf("r");
-                                }
-
-                                disk_head[i].pos = current_disk_head;
-                                disk_head[i].last_status = last_status;
-                            } 
-                            
-                            else //pass_num+64<=token的情况，通过pass之后还有余力读
+                            } else //pass_num+64<=token的情况，通过pass之后还有余力读
                             {
                                 token = token - pass_num;
                                 while (pass_num > 0) {
@@ -658,29 +630,11 @@ void read_action()  // 对象读取事件
                                 disk_head[i].pos = current_disk_head;
                                 disk_head[i].last_status = 1;
                             }
-                        } 
-                        else if(pass_num<10 && token>last_status)
-                        {
-                       
-                            int token_cost;
-                            token_cost,last_status= Token_Cost(last_status,pass_num);
-                            token -= token_cost;
-
-                            while (pass_num > 0) {
-                                --pass_num;
-                                printf("r");
-                            }
-
-                            disk_head[i].pos = current_disk_head;
-                            disk_head[i].last_status = last_status;
-                        } 
-                        else {
+                        } else {
                             if (pass_num + 64 > token) {
                                 printf("#\n");
                                 break;
-                            } 
-
-                            else {
+                            } else {
                                 token = token - pass_num;
                                 while (pass_num > 0) {
                                     --pass_num;
