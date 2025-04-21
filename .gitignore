@@ -9,6 +9,7 @@
 !*.md
 !*.cmd 
 !*.bat
+!*.png
 
 demos/cpp/test.cpp
 demos/cpp/TestFile/
